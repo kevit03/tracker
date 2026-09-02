@@ -18,6 +18,18 @@
       </span>
     </header>
 
+    <!-- Google Account Bar -->
+    <div class="account-bar" id="account-bar">
+      <div class="account-info hidden" id="account-info">
+        <div class="account-badge" id="account-badge">G</div>
+        <span class="account-email" id="account-email">user@gmail.com</span>
+        <button class="account-signout-btn" id="account-signout-btn" title="Sign Out">Sign Out</button>
+      </div>
+      <button class="account-signin-btn" id="account-signin-btn">
+        Sign In with Google
+      </button>
+    </div>
+
     <div class="date-row" id="current-date-text"></div>
 
     <div class="tabs-bar">
@@ -112,6 +124,7 @@
     </div>
   </div>
 
+  <script src="../shared/auth.js"></script>
   <script src="../shared/storage.js"></script>
   <script src="popup.js"></script>
 </body>

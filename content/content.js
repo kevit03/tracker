@@ -155,6 +155,16 @@
         '</div>',
         '<div class="pt-panel-body">',
 
+          // Google Account bar
+          '<div id="pt-dock-account" style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:#f8f9fa;border:1px solid #e8eaed;border-radius:6px;font-size:11px;">',
+            '<div id="pt-dock-account-info" class="pt-hidden" style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;">',
+              '<div style="width:18px;height:18px;border-radius:50%;background:#1a73e8;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;" id="pt-dock-account-badge">G</div>',
+              '<span id="pt-dock-account-email" style="font-weight:500;color:#202124;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;"></span>',
+              '<button id="pt-dock-signout" style="background:none;border:none;color:#d93025;font-size:11px;font-weight:500;cursor:pointer;padding:2px 4px;">Sign Out</button>',
+            '</div>',
+            '<button id="pt-dock-signin" style="width:100%;background:#fff;border:1px solid #dadce0;border-radius:4px;padding:5px 8px;font-size:11px;font-weight:600;color:#202124;cursor:pointer;">Sign In with Google</button>',
+          '</div>',
+
           // Hero card
           '<div class="pt-hero-card">',
             '<div class="pt-hero-count" id="pt-today-count">0</div>',
@@ -270,10 +280,50 @@
     addTrackerBtn.addEventListener('click', () => {
       openCreateTrackerModal();
     });
+
+    const signInBtn = document.getElementById('pt-dock-signin');
+    const signOutBtn = document.getElementById('pt-dock-signout');
+
+    if (signInBtn) {
+      signInBtn.addEventListener('click', async () => {
+        try {
+          await TrackerAuth.signInWithGoogle();
+          await refreshData();
+        } catch (err) {
+          console.warn('Sign-in cancelled:', err.message);
+        }
+      });
+    }
+
+    if (signOutBtn) {
+      signOutBtn.addEventListener('click', async () => {
+        await TrackerAuth.signOut();
+        await refreshData();
+      });
+    }
   }
 
   function updateDock() {
     if (!stats) return;
+
+    // Update Account UI
+    if (typeof TrackerAuth !== 'undefined') {
+      TrackerAuth.getCurrentUser().then(user => {
+        const info = document.getElementById('pt-dock-account-info');
+        const signin = document.getElementById('pt-dock-signin');
+        const emailEl = document.getElementById('pt-dock-account-email');
+        const badgeEl = document.getElementById('pt-dock-account-badge');
+        if (user && user.email) {
+          if (info) info.classList.remove('pt-hidden');
+          if (signin) signin.classList.add('pt-hidden');
+          if (emailEl) emailEl.textContent = user.email;
+          if (badgeEl) badgeEl.textContent = (user.name || user.email)[0].toUpperCase();
+        } else {
+          if (info) info.classList.add('pt-hidden');
+          if (signin) signin.classList.remove('pt-hidden');
+        }
+      });
+    }
 
     const jobsToday = stats.today.jobs || 0;
 
@@ -595,6 +645,9 @@
     observer.observe(document.body, { childList: true, subtree: true });
 
     TrackerStorage.onChanged(() => refreshData());
+    if (typeof TrackerAuth !== 'undefined') {
+      TrackerAuth.onAuthChanged(() => refreshData());
+    }
   }
 
   if (document.readyState === 'loading') {

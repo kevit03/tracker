@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let metrics = [];
   let stats = null;
   let activeMetricId = 'jobs';
+  let currentUser = null;
 
   const el = (id) => document.getElementById(id);
 
@@ -11,7 +12,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   el('current-date-text').textContent = formatDateHeader();
 
+  async function updateAuthUI() {
+    currentUser = await TrackerAuth.getCurrentUser();
+    const info = el('account-info');
+    const signInBtn = el('account-signin-btn');
+
+    if (currentUser && currentUser.email) {
+      info.classList.remove('hidden');
+      signInBtn.classList.add('hidden');
+      el('account-email').textContent = currentUser.email;
+      el('account-badge').textContent = (currentUser.name || currentUser.email)[0].toUpperCase();
+    } else {
+      info.classList.add('hidden');
+      signInBtn.classList.remove('hidden');
+    }
+  }
+
   async function loadData() {
+    await updateAuthUI();
     [metrics, stats] = await Promise.all([
       TrackerStorage.getMetrics(),
       TrackerStorage.getStats()
@@ -66,6 +84,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     el('stat-month').textContent = monthCount;
     el('stat-total').textContent = totalCount;
   }
+
+  // Google Sign In / Sign Out
+  el('account-signin-btn').addEventListener('click', async () => {
+    try {
+      await TrackerAuth.signInWithGoogle();
+      await loadData();
+    } catch (err) {
+      console.warn('Sign-in cancelled or failed:', err.message);
+    }
+  });
+
+  el('account-signout-btn').addEventListener('click', async () => {
+    await TrackerAuth.signOut();
+    await loadData();
+  });
 
   // +1
   el('quick-add-btn').addEventListener('click', async () => {
@@ -145,8 +178,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
   });
 
-  // Live sync from content script
+  // Live sync from content script and auth changes
   TrackerStorage.onChanged(() => loadData());
+  TrackerAuth.onAuthChanged(() => loadData());
 
   await loadData();
 });

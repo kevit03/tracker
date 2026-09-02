@@ -53,6 +53,14 @@ const TrackerStorage = (() => {
     };
   }
 
+  async function getCurrentUserEmail() {
+    if (typeof TrackerAuth !== 'undefined') {
+      const u = await TrackerAuth.getCurrentUser();
+      return u && u.email ? u.email : null;
+    }
+    return null;
+  }
+
   return {
     getLocalDateStr,
 
@@ -72,6 +80,7 @@ const TrackerStorage = (() => {
 
     async addMetric({ name, unit, color, icon }) {
       const metrics = await this.getMetrics();
+      const userEmail = await getCurrentUserEmail();
       const id = (name || 'metric')
         .toLowerCase()
         .replace(/[^a-z0-9]/g, '-')
@@ -83,6 +92,7 @@ const TrackerStorage = (() => {
         unit: (unit || 'items').trim(),
         color: color || '#1a73e8',
         icon: icon || 'target',
+        userEmail: userEmail || 'default',
         isDefault: false,
         createdAt: new Date().toISOString()
       };
@@ -102,9 +112,13 @@ const TrackerStorage = (() => {
     },
 
     async getLogs(filter = {}) {
+      const userEmail = await getCurrentUserEmail();
       return new Promise(resolve => {
         getStorageArea().get(['logs'], result => {
           let logs = result.logs || [];
+          if (userEmail) {
+            logs = logs.filter(l => !l.userEmail || l.userEmail === userEmail);
+          }
           if (filter.startDate) logs = logs.filter(l => l.date >= filter.startDate);
           if (filter.endDate) logs = logs.filter(l => l.date <= filter.endDate);
           if (filter.metricId) logs = logs.filter(l => l.metricId === filter.metricId);
@@ -115,6 +129,7 @@ const TrackerStorage = (() => {
     },
 
     async addLog({ metricId = 'jobs', count = 1, date, company = '', role = '', notes = '' }) {
+      const userEmail = await getCurrentUserEmail();
       return new Promise(resolve => {
         getStorageArea().get(['logs'], result => {
           const logs = result.logs || [];
@@ -124,6 +139,7 @@ const TrackerStorage = (() => {
           const newLog = {
             id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
             metricId,
+            userEmail: userEmail || 'default',
             count: Math.max(1, parseInt(count, 10) || 1),
             date: logDate,
             timestamp: now.toISOString(),
@@ -237,7 +253,7 @@ const TrackerStorage = (() => {
     onChanged(cb) {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {
-          if (area === 'local' && (changes.logs || changes.metrics)) {
+          if (area === 'local' && (changes.logs || changes.metrics || changes.pt_auth_user)) {
             cb(changes);
           }
         });
