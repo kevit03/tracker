@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Job & Activity Tracker for Google Calendar",
+  "version": "1.0.0",
+  "description": "Track job applications, LeetCodes, and daily streaks with a direct visual overlay on Google Calendar.",
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Track Applications & LeetCode",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://calendar.google.com/*"
+      ],
+      "js": [
+        "shared/storage.js",
+        "content/content.js"
+      ],
+      "css": [
+        "content/content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://calendar.google.com/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
