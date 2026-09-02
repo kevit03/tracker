@@ -73,13 +73,14 @@ const TrackerAuth = (() => {
       }
 
       // 2. Direct Google account email sign-in (for local/unpacked extensions before GCP OAuth client registration)
-      const email = customEmail || prompt('Enter your Google Account email (e.g. user@gmail.com):');
+      const rawEmail = customEmail || prompt('Enter your Google Account email (e.g. user@gmail.com):');
+      const email = (rawEmail || '').trim();
       if (!email || !email.includes('@')) {
         throw new Error('Valid email required for sign-in');
       }
 
       const user = {
-        email: email.trim().toLowerCase(),
+        email: email.toLowerCase(),
         name: email.split('@')[0],
         provider: 'google'
       };
@@ -88,6 +89,9 @@ const TrackerAuth = (() => {
     },
 
     async setUser(user) {
+      if (user && user.email) {
+        user.email = user.email.toLowerCase().trim();
+      }
       return new Promise(resolve => {
         getStorageArea().set({ [AUTH_KEY]: user }, () => {
           resolve(user);
@@ -111,7 +115,7 @@ const TrackerAuth = (() => {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {
           if (area === 'local' && changes[AUTH_KEY]) {
-            cb(changes[AUTH_KEY].newValue);
+            cb(changes[AUTH_KEY].newValue || null);
           }
         });
       }

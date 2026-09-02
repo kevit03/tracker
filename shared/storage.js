@@ -1,5 +1,12 @@
 // Shared storage manager for Job & Activity Tracker
 const TrackerStorage = (() => {
+  const STORAGE_KEYS = {
+    LOGS: 'logs',
+    METRICS: 'metrics',
+    AUTH: 'pt_auth_user',
+    VISIBLE_METRICS: 'pt_visible_metrics'
+  };
+
   const DEFAULT_METRICS = [
     {
       id: 'jobs',
@@ -21,12 +28,41 @@ const TrackerStorage = (() => {
     }
   ];
 
+  // Write queue mutex to serialize concurrent writes to chrome.storage.local
+  let writeLock = Promise.resolve();
+
+  function enqueueWrite(fn) {
+    const next = writeLock.then(() => fn(), () => fn());
+    writeLock = next.catch(() => {});
+    return next;
+  }
+
+  function normalizeEmail(email) {
+    if (!email || typeof email !== 'string') return null;
+    const trimmed = email.trim().toLowerCase();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
   function getLocalDateStr(d = new Date()) {
     const date = new Date(d);
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  }
+
+  function parseLocalDateToNoon(dateStr) {
+    if (!dateStr) return new Date();
+    const parts = dateStr.split('-').map(Number);
+    return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+  }
+
+  function addDays(dateStrOrDate, n) {
+    const d = typeof dateStrOrDate === 'string'
+      ? parseLocalDateToNoon(dateStrOrDate)
+      : new Date(dateStrOrDate.getFullYear(), dateStrOrDate.getMonth(), dateStrOrDate.getDate(), 12, 0, 0);
+    d.setDate(d.getDate() + n);
+    return getLocalDateStr(d);
   }
 
   function getStorageArea() {
@@ -36,156 +72,323 @@ const TrackerStorage = (() => {
     return {
       get: (keys, cb) => {
         const result = {};
-        keys.forEach(k => {
-          const val = localStorage.getItem(k);
-          if (val) {
-            try { result[k] = JSON.parse(val); } catch (e) { result[k] = val; }
+        const keyList = Array.isArray(keys) ? keys : (typeof keys === 'string' ? [keys] : Object.keys(keys || {}));
+        keyList.forEach(k => {
+          if (typeof localStorage !== 'undefined') {
+            const val = localStorage.getItem(k);
+            if (val !== null && val !== undefined) {
+              try { result[k] = JSON.parse(val); } catch (e) { result[k] = val; }
+            }
           }
         });
-        cb(result);
+        if (cb) cb(result);
       },
       set: (items, cb) => {
-        Object.entries(items).forEach(([k, v]) => {
-          localStorage.setItem(k, JSON.stringify(v));
-        });
+        if (typeof localStorage !== 'undefined') {
+          Object.entries(items).forEach(([k, v]) => {
+            localStorage.setItem(k, JSON.stringify(v));
+          });
+        }
         if (cb) cb();
       }
     };
   }
 
+  function safeGetLogs(result) {
+    return Array.isArray(result && result[STORAGE_KEYS.LOGS]) ? result[STORAGE_KEYS.LOGS] : [];
+  }
+
+  function safeGetMetrics(result) {
+    return Array.isArray(result && result[STORAGE_KEYS.METRICS]) ? result[STORAGE_KEYS.METRICS] : [];
+  }
+
   async function getCurrentUserEmail() {
-    if (typeof TrackerAuth !== 'undefined') {
-      const u = await TrackerAuth.getCurrentUser();
-      return u && u.email ? u.email : null;
+    if (typeof TrackerAuth !== 'undefined' && TrackerAuth && typeof TrackerAuth.getCurrentUser === 'function') {
+      try {
+        const u = await TrackerAuth.getCurrentUser();
+        return u && u.email ? normalizeEmail(u.email) : null;
+      } catch (e) {
+        return null;
+      }
     }
     return null;
   }
 
   return {
+    STORAGE_KEYS,
+    DEFAULT_METRICS,
     getLocalDateStr,
+    parseLocalDateToNoon,
+    addDays,
+    normalizeEmail,
 
-    async getMetrics() {
+    async getMetrics(userEmailOverride) {
+      const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
       return new Promise(resolve => {
-        getStorageArea().get(['metrics'], result => {
-          if (result.metrics && Array.isArray(result.metrics) && result.metrics.length > 0) {
-            resolve(result.metrics);
-          } else {
-            getStorageArea().set({ metrics: DEFAULT_METRICS }, () => {
-              resolve(DEFAULT_METRICS);
-            });
+        getStorageArea().get([STORAGE_KEYS.METRICS], result => {
+          let allMetrics = safeGetMetrics(result);
+          if (allMetrics.length === 0) {
+            allMetrics = [...DEFAULT_METRICS];
+            getStorageArea().set({ [STORAGE_KEYS.METRICS]: DEFAULT_METRICS });
           }
+          const filtered = allMetrics.filter(m => {
+            if (m.isDefault || m.id === 'jobs' || m.id === 'leetcode') return true;
+            const owner = normalizeEmail(m.userEmail);
+            if (!targetEmail) {
+              return !owner;
+            }
+            return owner === targetEmail;
+          });
+          resolve(filtered);
         });
       });
     },
 
-    async addMetric({ name, unit, color, icon }) {
-      const metrics = await this.getMetrics();
-      const userEmail = await getCurrentUserEmail();
-      const id = (name || 'metric')
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '-')
-        .replace(/-+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
-
-      const newMetric = {
-        id,
-        name: name.trim(),
-        unit: (unit || 'items').trim(),
-        color: color || '#1a73e8',
-        icon: icon || 'target',
-        userEmail: userEmail || 'default',
-        isDefault: false,
-        createdAt: new Date().toISOString()
-      };
-
-      metrics.push(newMetric);
-      return new Promise(resolve => {
-        getStorageArea().set({ metrics }, () => resolve(newMetric));
-      });
-    },
-
-    async deleteMetric(id) {
-      const metrics = await this.getMetrics();
-      const filtered = metrics.filter(m => m.id !== id || m.isDefault);
-      return new Promise(resolve => {
-        getStorageArea().set({ metrics: filtered }, () => resolve(true));
-      });
-    },
-
-    async getLogs(filter = {}) {
-      const userEmail = await getCurrentUserEmail();
-      return new Promise(resolve => {
-        getStorageArea().get(['logs'], result => {
-          let logs = result.logs || [];
-          if (userEmail) {
-            logs = logs.filter(l => !l.userEmail || l.userEmail === userEmail);
-          }
-          if (filter.startDate) logs = logs.filter(l => l.date >= filter.startDate);
-          if (filter.endDate) logs = logs.filter(l => l.date <= filter.endDate);
-          if (filter.metricId) logs = logs.filter(l => l.metricId === filter.metricId);
-          logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-          resolve(logs);
+    async saveMetrics(metrics) {
+      return enqueueWrite(async () => {
+        return new Promise(resolve => {
+          getStorageArea().set({ [STORAGE_KEYS.METRICS]: Array.isArray(metrics) ? metrics : [] }, () => resolve(true));
         });
       });
     },
 
-    async addLog({ metricId = 'jobs', count = 1, date, company = '', role = '', notes = '' }) {
-      const userEmail = await getCurrentUserEmail();
-      return new Promise(resolve => {
-        getStorageArea().get(['logs'], result => {
-          const logs = result.logs || [];
-          const now = new Date();
-          const logDate = date || getLocalDateStr(now);
+    async addMetric(metricOptions = {}, userEmailOverride) {
+      return enqueueWrite(async () => {
+        const options = typeof metricOptions === 'string' ? { name: metricOptions } : (metricOptions || {});
+        const customEmail = options.userEmail !== undefined ? options.userEmail : userEmailOverride;
+        const userEmail = normalizeEmail(customEmail !== undefined ? customEmail : await getCurrentUserEmail());
+        const cleanName = (options.name || '').trim();
+        const id = (cleanName || 'metric')
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '-')
+          .replace(/-+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
 
-          const newLog = {
-            id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-            metricId,
-            userEmail: userEmail || 'default',
-            count: Math.max(1, parseInt(count, 10) || 1),
-            date: logDate,
-            timestamp: now.toISOString(),
-            company: company.trim(),
-            role: role.trim(),
-            notes: notes.trim(),
-          };
+        const newMetric = {
+          id,
+          name: cleanName || 'Custom Metric',
+          unit: (options.unit || 'items').trim(),
+          color: options.color || '#1a73e8',
+          icon: options.icon || 'target',
+          userEmail: userEmail || null,
+          isDefault: false,
+          createdAt: new Date().toISOString()
+        };
 
-          logs.push(newLog);
-          getStorageArea().set({ logs }, () => resolve(newLog));
+        return new Promise(resolve => {
+          getStorageArea().get([STORAGE_KEYS.METRICS], result => {
+            let allMetrics = safeGetMetrics(result);
+            if (allMetrics.length === 0) {
+              allMetrics = [...DEFAULT_METRICS];
+            }
+            allMetrics.push(newMetric);
+            getStorageArea().set({ [STORAGE_KEYS.METRICS]: allMetrics }, () => resolve(newMetric));
+          });
         });
       });
     },
 
-    async deleteLog(id) {
-      return new Promise(resolve => {
-        getStorageArea().get(['logs'], result => {
-          const logs = result.logs || [];
-          const filtered = logs.filter(l => l.id !== id);
-          getStorageArea().set({ logs: filtered }, () => resolve(true));
-        });
-      });
-    },
-
-    async undoLastLog(metricId, date) {
-      const targetDate = date || getLocalDateStr();
-      const logs = await this.getLogs();
-      const match = logs.find(l => l.metricId === metricId && l.date === targetDate);
-      if (match) {
-        await this.deleteLog(match.id);
-        return true;
+    async deleteMetric(id, userEmailOverride) {
+      if (!id || id === 'jobs' || id === 'leetcode') {
+        return false;
       }
-      return false;
+      return enqueueWrite(async () => {
+        const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
+        return new Promise(resolve => {
+          getStorageArea().get([STORAGE_KEYS.METRICS], result => {
+            const allMetrics = safeGetMetrics(result);
+            const targetIndex = allMetrics.findIndex(m => m.id === id);
+            if (targetIndex === -1) {
+              resolve(false);
+              return;
+            }
+            const target = allMetrics[targetIndex];
+            if (target.isDefault || target.id === 'jobs' || target.id === 'leetcode') {
+              resolve(false);
+              return;
+            }
+            const owner = normalizeEmail(target.userEmail);
+            const isAuthorized = (!targetEmail && !owner) || (targetEmail && owner === targetEmail);
+            if (!isAuthorized) {
+              resolve(false);
+              return;
+            }
+            const filtered = allMetrics.filter(m => m.id !== id);
+            getStorageArea().set({ [STORAGE_KEYS.METRICS]: filtered }, () => resolve(true));
+          });
+        });
+      });
     },
 
-    async getStats() {
-      const [metrics, logs] = await Promise.all([this.getMetrics(), this.getLogs()]);
+    async getLogs(filter = {}, userEmailOverride) {
+      let metricId = null;
+      let startDate = null;
+      let endDate = null;
+      let targetUserEmail = undefined;
+
+      if (typeof filter === 'string') {
+        metricId = filter;
+        if (userEmailOverride !== undefined) {
+          targetUserEmail = userEmailOverride;
+        }
+      } else if (filter && typeof filter === 'object') {
+        metricId = filter.metricId || null;
+        startDate = filter.startDate || null;
+        endDate = filter.endDate || null;
+        if (filter.userEmail !== undefined) {
+          targetUserEmail = filter.userEmail;
+        } else if (userEmailOverride !== undefined) {
+          targetUserEmail = userEmailOverride;
+        }
+      }
+
+      if (targetUserEmail === undefined) {
+        targetUserEmail = await getCurrentUserEmail();
+      }
+      const normalizedTarget = normalizeEmail(targetUserEmail);
+
+      return new Promise(resolve => {
+        getStorageArea().get([STORAGE_KEYS.LOGS], result => {
+          const rawLogs = safeGetLogs(result);
+          const indexed = rawLogs.map((l, index) => ({ log: l, originalIndex: index }));
+          const filtered = indexed.filter(item => {
+            const l = item.log;
+            if (!l) return false;
+            const logEmail = normalizeEmail(l.userEmail);
+            if (!normalizedTarget) {
+              if (logEmail) return false;
+            } else {
+              if (logEmail !== normalizedTarget) return false;
+            }
+            if (metricId && l.metricId !== metricId) return false;
+            if (startDate && l.date < startDate) return false;
+            if (endDate && l.date > endDate) return false;
+            return true;
+          });
+
+          // Sort by timestamp descending; tie-breaker: reverse original insertion order (LIFO)
+          filtered.sort((a, b) => {
+            const timeA = new Date(a.log.timestamp || a.log.date || 0).getTime();
+            const timeB = new Date(b.log.timestamp || b.log.date || 0).getTime();
+            const diff = timeB - timeA;
+            if (diff !== 0) return diff;
+            return b.originalIndex - a.originalIndex;
+          });
+
+          resolve(filtered.map(item => item.log));
+        });
+      });
+    },
+
+    async addLog(logData = {}, userEmailOverride) {
+      return enqueueWrite(async () => {
+        const customEmail = logData.userEmail !== undefined ? logData.userEmail : userEmailOverride;
+        const userEmail = normalizeEmail(customEmail !== undefined ? customEmail : await getCurrentUserEmail());
+        return new Promise(resolve => {
+          getStorageArea().get([STORAGE_KEYS.LOGS], result => {
+            const logs = safeGetLogs(result);
+            const now = new Date();
+            const logDate = logData.date || getLocalDateStr(now);
+
+            const newLog = {
+              id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+              metricId: logData.metricId || 'jobs',
+              userEmail: userEmail || null,
+              count: Math.max(1, parseInt(logData.count, 10) || 1),
+              date: logDate,
+              timestamp: now.toISOString(),
+              company: (logData.company || '').trim(),
+              role: (logData.role || '').trim(),
+              notes: (logData.notes || '').trim(),
+            };
+
+            logs.push(newLog);
+            getStorageArea().set({ [STORAGE_KEYS.LOGS]: logs }, () => resolve(newLog));
+          });
+        });
+      });
+    },
+
+    async deleteLog(id, userEmailOverride) {
+      if (!id) return false;
+      return enqueueWrite(async () => {
+        const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
+        return new Promise(resolve => {
+          getStorageArea().get([STORAGE_KEYS.LOGS], result => {
+            const logs = safeGetLogs(result);
+            const targetIndex = logs.findIndex(l => l.id === id);
+            if (targetIndex === -1) {
+              resolve(false);
+              return;
+            }
+            const log = logs[targetIndex];
+            const logEmail = normalizeEmail(log.userEmail);
+            const isAuthorized = (!targetEmail && !logEmail) || (targetEmail && logEmail === targetEmail);
+            if (!isAuthorized) {
+              resolve(false);
+              return;
+            }
+            const filtered = logs.filter(l => l.id !== id);
+            getStorageArea().set({ [STORAGE_KEYS.LOGS]: filtered }, () => resolve(true));
+          });
+        });
+      });
+    },
+
+    async undoLastLog(metricId = 'jobs', date, userEmailOverride) {
+      return enqueueWrite(async () => {
+        const targetDate = date || getLocalDateStr();
+        const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
+        return new Promise(resolve => {
+          getStorageArea().get([STORAGE_KEYS.LOGS], result => {
+            const logs = safeGetLogs(result);
+            const indexed = logs.map((l, index) => ({ log: l, originalIndex: index }));
+            const filtered = indexed.filter(item => {
+              const l = item.log;
+              if (!l || l.metricId !== metricId || l.date !== targetDate) return false;
+              const logEmail = normalizeEmail(l.userEmail);
+              if (!targetEmail) return !logEmail;
+              return logEmail === targetEmail;
+            });
+
+            if (filtered.length === 0) {
+              resolve(false);
+              return;
+            }
+
+            filtered.sort((a, b) => {
+              const timeA = new Date(a.log.timestamp || a.log.date || 0).getTime();
+              const timeB = new Date(b.log.timestamp || b.log.date || 0).getTime();
+              const diff = timeB - timeA;
+              if (diff !== 0) return diff;
+              return b.originalIndex - a.originalIndex;
+            });
+
+            const newestId = filtered[0].log.id;
+            const remaining = logs.filter(l => l.id !== newestId);
+            getStorageArea().set({ [STORAGE_KEYS.LOGS]: remaining }, () => resolve(true));
+          });
+        });
+      });
+    },
+
+    async getStats(metricIdOrEmail, userEmailOverride) {
+      let targetEmail = undefined;
+      if (typeof metricIdOrEmail === 'string' && metricIdOrEmail.includes('@')) {
+        targetEmail = metricIdOrEmail;
+      } else if (userEmailOverride !== undefined) {
+        targetEmail = userEmailOverride;
+      } else {
+        targetEmail = await getCurrentUserEmail();
+      }
+
+      const [metrics, logs] = await Promise.all([
+        this.getMetrics(targetEmail),
+        this.getLogs({}, targetEmail)
+      ]);
       const now = new Date();
       const todayStr = getLocalDateStr(now);
-
-      const weekAgo = new Date(now);
-      weekAgo.setDate(now.getDate() - 6);
-      const weekAgoStr = getLocalDateStr(weekAgo);
-
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const startOfMonthStr = getLocalDateStr(startOfMonth);
+      const weekAgoStr = addDays(todayStr, -6);
+      const startOfMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
       const today = {};
       const thisWeek = {};
@@ -226,15 +429,15 @@ const TrackerStorage = (() => {
 
       const jobDateSet = new Set(jobDates);
       let currentStreak = 0;
-      let checkDate = new Date(now);
+      let checkDateStr = todayStr;
 
-      if (!jobDateSet.has(getLocalDateStr(checkDate))) {
-        checkDate.setDate(checkDate.getDate() - 1);
+      if (!jobDateSet.has(checkDateStr)) {
+        checkDateStr = addDays(checkDateStr, -1);
       }
 
-      while (jobDateSet.has(getLocalDateStr(checkDate))) {
+      while (jobDateSet.has(checkDateStr)) {
         currentStreak++;
-        checkDate.setDate(checkDate.getDate() - 1);
+        checkDateStr = addDays(checkDateStr, -1);
       }
 
       return {
@@ -253,7 +456,7 @@ const TrackerStorage = (() => {
     onChanged(cb) {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {
-          if (area === 'local' && (changes.logs || changes.metrics || changes.pt_auth_user)) {
+          if (area === 'local' && (changes.logs || changes.metrics || changes.pt_auth_user || changes.pt_visible_metrics)) {
             cb(changes);
           }
         });

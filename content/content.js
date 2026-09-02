@@ -3,6 +3,7 @@
   let metrics = [];
   let stats = null;
   let allLogs = [];
+  let knownMetricIds = new Set();
   let activeVisibleMetrics = new Set(['jobs', 'leetcode']);
   let isPanelOpen = false;
   let isDetailFormOpen = false;
@@ -13,9 +14,12 @@
   function dateFromDateKey(key) {
     const num = parseInt(key, 10);
     if (isNaN(num)) return null;
-    const d = new Date(1970, 0, 1);
-    d.setDate(d.getDate() + num);
-    return TrackerStorage.getLocalDateStr(d);
+    const ms = num * 86400000 + 43200000;
+    const d = new Date(ms);
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   function parseDateFromElement(el) {
@@ -50,6 +54,15 @@
     return m;
   }
 
+  function saveActiveVisibleMetrics() {
+    const arr = Array.from(activeVisibleMetrics);
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ pt_visible_metrics: arr });
+    } else if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('pt_visible_metrics', JSON.stringify(arr));
+    }
+  }
+
   // ---------------------------------------------------------------
   // Data
   // ---------------------------------------------------------------
@@ -59,12 +72,50 @@
       TrackerStorage.getStats(),
       TrackerStorage.getLogs()
     ]);
-    // Make sure all existing metric ids are visible
-    metrics.forEach(m => {
-      if (!activeVisibleMetrics.has(m.id)) {
-        activeVisibleMetrics.add(m.id);
+    const currentMetricIds = new Set(metrics.map(m => m.id));
+
+    let savedVisible = null;
+    try {
+      const res = await new Promise(r => {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.get(['pt_visible_metrics'], r);
+        } else if (typeof localStorage !== 'undefined') {
+          const v = localStorage.getItem('pt_visible_metrics');
+          r({ pt_visible_metrics: v ? JSON.parse(v) : null });
+        } else {
+          r({});
+        }
+      });
+      savedVisible = res.pt_visible_metrics;
+    } catch (e) {}
+
+    if (Array.isArray(savedVisible)) {
+      activeVisibleMetrics = new Set(savedVisible.filter(id => currentMetricIds.has(id)));
+      if (activeVisibleMetrics.size === 0 && metrics.length > 0) {
+        activeVisibleMetrics.add(metrics[0].id);
       }
-    });
+      metrics.forEach(m => knownMetricIds.add(m.id));
+    } else {
+      if (knownMetricIds.size === 0) {
+        metrics.forEach(m => {
+          knownMetricIds.add(m.id);
+          activeVisibleMetrics.add(m.id);
+        });
+      } else {
+        metrics.forEach(m => {
+          if (!knownMetricIds.has(m.id)) {
+            knownMetricIds.add(m.id);
+            activeVisibleMetrics.add(m.id);
+          }
+        });
+        for (const id of Array.from(knownMetricIds)) {
+          if (!currentMetricIds.has(id)) {
+            knownMetricIds.delete(id);
+            activeVisibleMetrics.delete(id);
+          }
+        }
+      }
+    }
     renderBadges();
     updateDock();
   }
@@ -86,15 +137,27 @@
         cell.style.position = 'relative';
       }
 
-      // Remove old overlay
+      const dateCounts = stats.dailyMap[dateStr] || {};
+      const stateKeyParts = [];
+      metrics.forEach(m => {
+        if (!activeVisibleMetrics.has(m.id)) return;
+        const count = dateCounts[m.id] || 0;
+        if (count > 0) {
+          stateKeyParts.push(m.id + ':' + count + ':' + m.color);
+        }
+      });
+      const stateKey = stateKeyParts.join('|');
+
       const existing = cell.querySelector('.pt-cell-overlay');
+      if (existing && existing.dataset.stateKey === stateKey) {
+        return;
+      }
+
       if (existing) existing.remove();
 
       const overlay = document.createElement('div');
       overlay.className = 'pt-cell-overlay';
-
-      const dateCounts = stats.dailyMap[dateStr] || {};
-      const mMap = metricsMap();
+      overlay.dataset.stateKey = stateKey;
 
       metrics.forEach(m => {
         if (!activeVisibleMetrics.has(m.id)) return;
@@ -348,22 +411,39 @@
       });
     }
 
-    // Secondary quick-add buttons (non-jobs metrics)
+    // Secondary quick-add and undo buttons (non-jobs metrics)
     const secContainer = el('pt-secondary-actions');
     if (secContainer) {
       secContainer.innerHTML = '';
       metrics.filter(m => m.id !== 'jobs').forEach(m => {
         const todayC = stats.today[m.id] || 0;
-        const btn = document.createElement('button');
-        btn.className = 'pt-btn-metric';
-        btn.style.color = m.color;
-        btn.style.borderColor = m.color + '60';
-        btn.textContent = '+1 ' + m.name + ' (' + todayC + ')';
-        btn.addEventListener('click', async () => {
+        const row = document.createElement('div');
+        row.className = 'pt-secondary-row';
+
+        const addBtn = document.createElement('button');
+        addBtn.className = 'pt-btn-metric';
+        addBtn.id = 'pt-quick-add-' + m.id;
+        addBtn.style.color = m.color;
+        addBtn.style.borderColor = m.color + '60';
+        addBtn.textContent = '+1 ' + m.name + ' (' + todayC + ')';
+        addBtn.addEventListener('click', async () => {
           await TrackerStorage.addLog({ metricId: m.id, count: 1 });
           await refreshData();
         });
-        secContainer.appendChild(btn);
+
+        const undoBtn = document.createElement('button');
+        undoBtn.className = 'pt-btn-secondary pt-btn-metric-undo';
+        undoBtn.id = 'pt-undo-' + m.id;
+        undoBtn.title = 'Undo last ' + m.name;
+        undoBtn.textContent = '-1';
+        undoBtn.addEventListener('click', async () => {
+          await TrackerStorage.undoLastLog(m.id);
+          await refreshData();
+        });
+
+        row.appendChild(addBtn);
+        row.appendChild(undoBtn);
+        secContainer.appendChild(row);
       });
     }
 
@@ -413,7 +493,9 @@
             e.stopPropagation();
             if (confirm('Delete tracker "' + m.name + '" and all its entries?')) {
               await TrackerStorage.deleteMetric(m.id);
+              knownMetricIds.delete(m.id);
               activeVisibleMetrics.delete(m.id);
+              saveActiveVisibleMetrics();
               await refreshData();
             }
           });
@@ -429,6 +511,7 @@
           } else {
             activeVisibleMetrics.add(m.id);
           }
+          saveActiveVisibleMetrics();
           updateDock();
           renderBadges();
         });
@@ -623,7 +706,9 @@
       if (!name) return;
 
       const created = await TrackerStorage.addMetric({ name, color: selectedColor, unit, icon: 'custom' });
+      knownMetricIds.add(created.id);
       activeVisibleMetrics.add(created.id);
+      saveActiveVisibleMetrics();
       backdrop.remove();
       await refreshData();
     });
@@ -633,7 +718,21 @@
   // 5. OBSERVER & INIT
   // ---------------------------------------------------------------
   let debounceTimer = null;
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver((mutations) => {
+    const isOnlyInternal = mutations && mutations.length > 0 && mutations.every(mutation => {
+      const target = mutation.target;
+      if (target && target.closest && (
+        target.closest('.pt-cell-overlay') ||
+        target.closest('#pt-floating-dock') ||
+        target.closest('.pt-modal-backdrop')
+      )) {
+        return true;
+      }
+      return false;
+    });
+
+    if (isOnlyInternal) return;
+
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => renderBadges(), 300);
   });
