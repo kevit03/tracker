@@ -8,67 +8,51 @@
 </head>
 <body>
   <div class="container">
-    <!-- Header -->
     <header class="header">
       <div class="brand">
-        <span class="brand-icon">🎯</span>
+        <div class="brand-dot"></div>
         <span class="brand-title">PulseTracker</span>
       </div>
-      <div class="header-right">
-        <span class="streak-pill">
-          🔥 <span id="streak-count">0</span>-day streak
-        </span>
-      </div>
+      <span class="streak-pill" id="streak-pill">
+        <span id="streak-count">0</span>-day streak
+      </span>
     </header>
 
-    <!-- Date Banner -->
-    <div class="date-row">
-      <span id="current-date-text">Today</span>
-    </div>
+    <div class="date-row" id="current-date-text"></div>
 
-    <!-- Category Tabs -->
     <div class="tabs-bar">
-      <div id="metric-tabs" class="tabs-scroll">
-        <!-- Injected dynamically: [🎯 Jobs] [💡 LeetCode] ... -->
-      </div>
-      <button id="add-metric-tab-btn" class="tab-add-btn" title="Add another tracker (e.g. LeetCode, Cold Emails)">+</button>
+      <div id="metric-tabs" class="tabs-scroll"></div>
+      <button id="add-metric-tab-btn" class="tab-add-btn" title="Add tracker">+</button>
     </div>
 
-    <!-- Main Counter Hero Card -->
-    <div class="counter-card" id="counter-card">
+    <div class="counter-card">
       <div class="counter-display">
         <span id="metric-count" class="counter-number">0</span>
         <span id="metric-unit-label" class="counter-label">applied today</span>
       </div>
-
       <div class="action-buttons">
         <button id="quick-add-btn" class="btn-primary">
           <span id="quick-add-label">+1 Applied</span>
         </button>
-        <button id="undo-btn" class="btn-secondary" title="Undo / Subtract 1">
-          -1
-        </button>
+        <button id="undo-btn" class="btn-secondary" title="Undo">-1</button>
       </div>
     </div>
 
-    <!-- Optional Detail Accordion -->
     <div class="details-section">
       <button id="toggle-details-btn" class="details-toggle">
-        <span id="toggle-details-text">+ Add details (company, role, notes)</span>
-        <span id="details-arrow">▼</span>
+        <span>+ Add details (company, role, notes)</span>
+        <span id="details-arrow" class="arrow-down"></span>
       </button>
-
       <form id="details-form" class="details-form hidden">
-        <input type="text" id="detail-company" placeholder="Company / Problem name (e.g. Google, Two Sum)" />
-        <input type="text" id="detail-role" placeholder="Role / Tag (e.g. SWE Intern, Medium)" />
-        <input type="text" id="detail-notes" placeholder="Notes or job posting URL" />
+        <input type="text" id="detail-company" placeholder="Company or problem name" />
+        <input type="text" id="detail-role" placeholder="Role or tag" />
+        <input type="text" id="detail-notes" placeholder="Notes or URL" />
         <div class="form-actions">
-          <button type="submit" class="btn-sm-primary" id="save-detail-btn">Save Entry</button>
+          <button type="submit" class="btn-sm-primary">Save Entry</button>
         </div>
       </form>
     </div>
 
-    <!-- Stats Summary Row -->
     <div class="summary-stats">
       <div class="stat-item">
         <span class="stat-value" id="stat-week">0</span>
@@ -86,18 +70,13 @@
       </div>
     </div>
 
-    <!-- Google Calendar Jump Link -->
     <footer class="footer">
       <button id="open-calendar-btn" class="calendar-btn">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-          <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11zM9 11H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm-8 4H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z"/>
-        </svg>
-        <span>View on Google Calendar</span>
-        <span>↗</span>
+        View on Google Calendar
       </button>
     </footer>
 
-    <!-- New Metric Modal -->
+    <!-- New metric modal -->
     <div id="new-metric-modal" class="modal-overlay hidden">
       <div class="modal-content">
         <div class="modal-header">
@@ -106,22 +85,22 @@
         </div>
         <form id="new-metric-form">
           <div class="form-group">
-            <label for="new-metric-name">Tracker Name</label>
+            <label for="new-metric-name">Name</label>
             <input type="text" id="new-metric-name" placeholder="e.g. Cold Emails, System Design" required />
           </div>
           <div class="form-group">
-            <label for="new-metric-icon">Icon Emoji</label>
-            <input type="text" id="new-metric-icon" placeholder="e.g. ✉️, 📚, 💻" value="🎯" style="width: 60px;" />
+            <label for="new-metric-unit">Unit</label>
+            <input type="text" id="new-metric-unit" placeholder="e.g. emails, sessions" value="items" />
           </div>
           <div class="form-group">
-            <label>Color Theme</label>
+            <label>Color</label>
             <div class="color-palette" id="color-palette">
-              <button type="button" class="color-option selected" data-color="#1a73e8" style="background-color: #1a73e8;"></button>
-              <button type="button" class="color-option" data-color="#1e8e3e" style="background-color: #1e8e3e;"></button>
-              <button type="button" class="color-option" data-color="#d93025" style="background-color: #d93025;"></button>
-              <button type="button" class="color-option" data-color="#f9ab00" style="background-color: #f9ab00;"></button>
-              <button type="button" class="color-option" data-color="#9334e6" style="background-color: #9334e6;"></button>
-              <button type="button" class="color-option" data-color="#007b83" style="background-color: #007b83;"></button>
+              <button type="button" class="color-option selected" data-color="#1a73e8" style="background:#1a73e8;"></button>
+              <button type="button" class="color-option" data-color="#1e8e3e" style="background:#1e8e3e;"></button>
+              <button type="button" class="color-option" data-color="#d93025" style="background:#d93025;"></button>
+              <button type="button" class="color-option" data-color="#f9ab00" style="background:#f9ab00;"></button>
+              <button type="button" class="color-option" data-color="#9334e6" style="background:#9334e6;"></button>
+              <button type="button" class="color-option" data-color="#007b83" style="background:#007b83;"></button>
             </div>
           </div>
           <div class="modal-actions">

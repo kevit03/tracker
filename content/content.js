@@ -1,12 +1,15 @@
-// Google Calendar Content Script for Job & Activity Tracker
+// Google Calendar Content Script — Job & Activity Tracker
 (() => {
   let metrics = [];
   let stats = null;
+  let allLogs = [];
   let activeVisibleMetrics = new Set(['jobs', 'leetcode']);
   let isPanelOpen = false;
   let isDetailFormOpen = false;
 
-  // Convert Google Calendar data-datekey to YYYY-MM-DD
+  // ---------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------
   function dateFromDateKey(key) {
     const num = parseInt(key, 10);
     if (isNaN(num)) return null;
@@ -15,7 +18,6 @@
     return TrackerStorage.getLocalDateStr(d);
   }
 
-  // Fallback date parser from aria-label or text
   function parseDateFromElement(el) {
     if (el.dataset && el.dataset.datekey) {
       return dateFromDateKey(el.dataset.datekey);
@@ -23,186 +25,193 @@
     const label = el.getAttribute('aria-label') || '';
     const match = label.match(/([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/);
     if (match) {
-      const d = new Date(`${match[1]} ${match[2]}, ${match[3]}`);
+      const d = new Date(match[1] + ' ' + match[2] + ', ' + match[3]);
       if (!isNaN(d.getTime())) return TrackerStorage.getLocalDateStr(d);
     }
     return null;
   }
 
-  // Load data
+  function formatDateNice(dateStr) {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  function formatTime(isoStr) {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function metricsMap() {
+    const m = {};
+    metrics.forEach(x => { m[x.id] = x; });
+    return m;
+  }
+
+  // ---------------------------------------------------------------
+  // Data
+  // ---------------------------------------------------------------
   async function refreshData() {
-    [metrics, stats] = await Promise.all([
+    [metrics, stats, allLogs] = await Promise.all([
       TrackerStorage.getMetrics(),
-      TrackerStorage.getStats()
+      TrackerStorage.getStats(),
+      TrackerStorage.getLogs()
     ]);
+    // Make sure all existing metric ids are visible
+    metrics.forEach(m => {
+      if (!activeVisibleMetrics.has(m.id)) {
+        activeVisibleMetrics.add(m.id);
+      }
+    });
     renderBadges();
     updateDock();
   }
 
-  // -------------------------------------------------------------
-  // 1. INJECT DAY CELL BADGES ON GOOGLE CALENDAR
-  // -------------------------------------------------------------
+  // ---------------------------------------------------------------
+  // 1. DAY CELL BADGES
+  // ---------------------------------------------------------------
   function renderBadges() {
     if (!stats || !metrics.length) return;
 
-    // Find all day cells in Month and Week views
-    const dayCells = document.querySelectorAll('[data-datekey], [role="gridcell"]');
-    const processedDates = new Set();
+    const cells = document.querySelectorAll('[data-datekey]');
 
-    dayCells.forEach(cell => {
+    cells.forEach(cell => {
       const dateStr = parseDateFromElement(cell);
       if (!dateStr) return;
 
-      // Ensure relative positioning on the cell
       const computedPos = window.getComputedStyle(cell).position;
       if (computedPos === 'static') {
         cell.style.position = 'relative';
       }
 
-      // Check or create overlay container
-      let overlay = cell.querySelector('.pt-cell-overlay');
-      if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.className = 'pt-cell-overlay';
-        cell.appendChild(overlay);
-      }
+      // Remove old overlay
+      const existing = cell.querySelector('.pt-cell-overlay');
+      if (existing) existing.remove();
 
-      // Populate overlay
+      const overlay = document.createElement('div');
+      overlay.className = 'pt-cell-overlay';
+
       const dateCounts = stats.dailyMap[dateStr] || {};
-      overlay.innerHTML = '';
+      const mMap = metricsMap();
 
-      // Check if any tracked metric has count > 0
-      let hasData = false;
       metrics.forEach(m => {
         if (!activeVisibleMetrics.has(m.id)) return;
         const count = dateCounts[m.id] || 0;
-        if (count > 0) {
-          hasData = true;
-          const badge = document.createElement('span');
-          badge.className = 'pt-badge';
-          badge.style.backgroundColor = `${m.color}18`;
-          badge.style.color = m.color;
-          badge.style.border = `1px solid ${m.color}40`;
-          badge.title = `${count} ${m.name} on ${dateStr}. Click to view details.`;
-          badge.innerHTML = `<span>${m.icon || '🎯'}</span> <span>${count}</span>`;
+        if (count <= 0) return;
 
-          badge.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openDayModal(dateStr);
-          });
+        const badge = document.createElement('span');
+        badge.className = 'pt-badge';
+        badge.style.backgroundColor = m.color + '1a';
+        badge.style.color = m.color;
+        badge.title = count + ' ' + m.name + ' on ' + dateStr;
+        badge.textContent = count + ' ' + m.name;
 
-          overlay.appendChild(badge);
-        }
+        badge.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          openDayModal(dateStr);
+        });
+
+        overlay.appendChild(badge);
       });
 
-      // Quick add button on hover
-      const quickAddBtn = document.createElement('button');
-      quickAddBtn.className = 'pt-quick-add-cell';
-      quickAddBtn.title = `Log application or activity for ${dateStr}`;
-      quickAddBtn.textContent = '+';
-      quickAddBtn.addEventListener('click', (e) => {
+      // Hover + button
+      const addBtn = document.createElement('button');
+      addBtn.className = 'pt-quick-add-cell';
+      addBtn.title = 'Log entry for ' + dateStr;
+      addBtn.textContent = '+';
+      addBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        e.preventDefault();
         openDayModal(dateStr, true);
       });
-      overlay.appendChild(quickAddBtn);
+      overlay.appendChild(addBtn);
+
+      cell.appendChild(overlay);
     });
   }
 
-  // -------------------------------------------------------------
-  // 2. FLOATING IN-CALENDAR DOCK / SIDEBAR
-  // -------------------------------------------------------------
+  // ---------------------------------------------------------------
+  // 2. FLOATING DOCK
+  // ---------------------------------------------------------------
   function mountFloatingDock() {
     if (document.getElementById('pt-floating-dock')) return;
 
-    const dockContainer = document.createElement('div');
-    dockContainer.id = 'pt-floating-dock';
+    const dock = document.createElement('div');
+    dock.id = 'pt-floating-dock';
 
-    dockContainer.innerHTML = `
-      <!-- Collapsed Button -->
-      <button class="pt-dock-toggle" id="pt-dock-toggle">
-        <span class="pt-icon">🎯</span>
-        <span id="pt-dock-label">Jobs Tracker</span>
-        <span class="pt-streak-pill" id="pt-dock-streak">🔥 0</span>
-      </button>
+    dock.innerHTML = [
+      '<button class="pt-dock-toggle" id="pt-dock-toggle">',
+        '<span class="pt-dock-icon"></span>',
+        '<span id="pt-dock-label">Tracker</span>',
+        '<span class="pt-streak-pill" id="pt-dock-streak">0 day streak</span>',
+      '</button>',
+      '<div class="pt-dock-panel pt-hidden" id="pt-dock-panel">',
+        '<div class="pt-panel-header">',
+          '<span class="pt-panel-title">Application Tracker</span>',
+          '<button class="pt-close-btn" id="pt-dock-close">&times;</button>',
+        '</div>',
+        '<div class="pt-panel-body">',
 
-      <!-- Slide-up Panel -->
-      <div class="pt-dock-panel pt-hidden" id="pt-dock-panel">
-        <div class="pt-panel-header">
-          <div class="pt-panel-title">
-            <span>🎯</span>
-            <span>Application Tracker</span>
-          </div>
-          <button class="pt-close-btn" id="pt-dock-close">&times;</button>
-        </div>
+          // Hero card
+          '<div class="pt-hero-card">',
+            '<div class="pt-hero-count" id="pt-today-count">0</div>',
+            '<div class="pt-hero-label" id="pt-today-label">jobs applied today</div>',
+            '<div class="pt-action-row">',
+              '<button class="pt-btn-primary" id="pt-quick-add-job">+1 Job Applied</button>',
+              '<button class="pt-btn-secondary" id="pt-undo-job">-1</button>',
+            '</div>',
+          '</div>',
 
-        <div class="pt-panel-body">
-          <!-- Hero Card for Today's Jobs -->
-          <div class="pt-hero-card">
-            <div class="pt-hero-count" id="pt-today-count">0</div>
-            <div class="pt-hero-label" id="pt-today-label">jobs applied today</div>
-            <div class="pt-action-row">
-              <button class="pt-btn-primary" id="pt-quick-add-job">+1 Job Applied</button>
-              <button class="pt-btn-secondary" id="pt-undo-job" title="Undo / -1">-1</button>
-            </div>
-          </div>
+          // Secondary
+          '<div class="pt-secondary-actions" id="pt-secondary-actions"></div>',
 
-          <!-- Secondary Trackers (LeetCode & Custom) -->
-          <div class="pt-secondary-actions" id="pt-secondary-actions">
-            <button class="pt-btn-metric" id="pt-quick-add-leetcode" style="color: #1e8e3e; border-color: #1e8e3e40;">
-              <span>💡</span>
-              <span>+1 LeetCode (<span id="pt-leetcode-count">0</span>)</span>
-            </button>
-          </div>
+          // Details
+          '<div>',
+            '<button class="pt-details-toggle" id="pt-details-toggle">+ Log with details</button>',
+            '<div class="pt-details-form pt-hidden" id="pt-details-form">',
+              '<select id="pt-form-metric"></select>',
+              '<input type="text" id="pt-form-company" placeholder="Company or problem name" />',
+              '<input type="text" id="pt-form-role" placeholder="Role or tag" />',
+              '<input type="text" id="pt-form-notes" placeholder="Notes or link" />',
+              '<button class="pt-btn-primary" id="pt-form-submit" style="padding:6px;font-size:12px;">Save Entry</button>',
+            '</div>',
+          '</div>',
 
-          <!-- Details Accordion -->
-          <div>
-            <button class="pt-details-toggle" id="pt-details-toggle">
-              + Log with company name / notes
-            </button>
-            <div class="pt-details-form pt-hidden" id="pt-details-form">
-              <select id="pt-form-metric" style="padding: 6px; font-size: 12px; border-radius: 4px; border: 1px solid #dadce0;">
-                <!-- Populated dynamically -->
-              </select>
-              <input type="text" id="pt-form-company" placeholder="Company / Problem (e.g. Google, Two Sum)" />
-              <input type="text" id="pt-form-role" placeholder="Role / Tag (e.g. SWE, Medium)" />
-              <input type="text" id="pt-form-notes" placeholder="Notes or job link" />
-              <button class="pt-btn-primary" id="pt-form-submit" style="padding: 6px; font-size: 12px;">Save Entry</button>
-            </div>
-          </div>
+          // Trackers
+          '<div>',
+            '<div class="pt-section-title">',
+              '<span>Trackers</span>',
+              '<button id="pt-add-tracker-btn" style="background:none;border:none;color:#1a73e8;font-size:11px;cursor:pointer;font-weight:600;">+ Add</button>',
+            '</div>',
+            '<div class="pt-tracker-list" id="pt-tracker-list"></div>',
+          '</div>',
 
-          <!-- Trackers List & Filter -->
-          <div>
-            <div class="pt-section-title">
-              <span>Trackers on Calendar</span>
-              <button id="pt-add-custom-tracker-btn" style="background:none; border:none; color:#1a73e8; font-size:11px; cursor:pointer; font-weight:600;">+ New</button>
-            </div>
-            <div class="pt-tracker-list" id="pt-tracker-list">
-              <!-- Rendered dynamically -->
-            </div>
-          </div>
+          // Stats bar
+          '<div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:6px;padding:8px;font-size:11px;display:flex;justify-content:space-around;">',
+            '<div style="text-align:center;">',
+              '<div style="font-size:14px;font-weight:bold;color:#202124;" id="pt-stat-week">0</div>',
+              '<div style="color:#5f6368;text-transform:uppercase;font-size:9px;">This Week</div>',
+            '</div>',
+            '<div style="width:1px;background:#dadce0;"></div>',
+            '<div style="text-align:center;">',
+              '<div style="font-size:14px;font-weight:bold;color:#202124;" id="pt-stat-month">0</div>',
+              '<div style="color:#5f6368;text-transform:uppercase;font-size:9px;">This Month</div>',
+            '</div>',
+            '<div style="width:1px;background:#dadce0;"></div>',
+            '<div style="text-align:center;">',
+              '<div style="font-size:14px;font-weight:bold;color:#202124;" id="pt-stat-total">0</div>',
+              '<div style="color:#5f6368;text-transform:uppercase;font-size:9px;">Total</div>',
+            '</div>',
+          '</div>',
 
-          <!-- Stats Overview -->
-          <div style="background:#f8f9fa; border: 1px solid #e8eaed; border-radius:8px; padding:10px; font-size:11px; display:flex; justify-content:space-around;">
-            <div style="text-align:center;">
-              <div style="font-size:14px; font-weight:bold; color:#202124;" id="pt-stat-week">0</div>
-              <div style="color:#5f6368; text-transform:uppercase; font-size:9px;">This Week</div>
-            </div>
-            <div style="width:1px; background:#dadce0;"></div>
-            <div style="text-align:center;">
-              <div style="font-size:14px; font-weight:bold; color:#202124;" id="pt-stat-month">0</div>
-              <div style="color:#5f6368; text-transform:uppercase; font-size:9px;">This Month</div>
-            </div>
-            <div style="width:1px; background:#dadce0;"></div>
-            <div style="text-align:center;">
-              <div style="font-size:14px; font-weight:bold; color:#202124;" id="pt-stat-total">0</div>
-              <div style="color:#5f6368; text-transform:uppercase; font-size:9px;">Total Jobs</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
+        '</div>',
+      '</div>'
+    ].join('');
 
-    document.body.appendChild(dockContainer);
+    document.body.appendChild(dock);
     setupDockListeners();
   }
 
@@ -212,11 +221,10 @@
     const closeBtn = document.getElementById('pt-dock-close');
     const quickAddJob = document.getElementById('pt-quick-add-job');
     const undoJob = document.getElementById('pt-undo-job');
-    const quickAddLeetcode = document.getElementById('pt-quick-add-leetcode');
     const detailsToggle = document.getElementById('pt-details-toggle');
     const detailsForm = document.getElementById('pt-details-form');
     const formSubmit = document.getElementById('pt-form-submit');
-    const addCustomBtn = document.getElementById('pt-add-custom-tracker-btn');
+    const addTrackerBtn = document.getElementById('pt-add-tracker-btn');
 
     toggleBtn.addEventListener('click', () => {
       isPanelOpen = !isPanelOpen;
@@ -228,55 +236,38 @@
       panel.classList.add('pt-hidden');
     });
 
-    // Quick +1 Job
     quickAddJob.addEventListener('click', async () => {
       await TrackerStorage.addLog({ metricId: 'jobs', count: 1 });
       await refreshData();
     });
 
-    // Undo Job
     undoJob.addEventListener('click', async () => {
       await TrackerStorage.undoLastLog('jobs');
       await refreshData();
     });
 
-    // Quick +1 LeetCode
-    quickAddLeetcode.addEventListener('click', async () => {
-      await TrackerStorage.addLog({ metricId: 'leetcode', count: 1 });
-      await refreshData();
-    });
-
-    // Details toggle
     detailsToggle.addEventListener('click', () => {
       isDetailFormOpen = !isDetailFormOpen;
       detailsForm.classList.toggle('pt-hidden', !isDetailFormOpen);
     });
 
-    // Submit details
     formSubmit.addEventListener('click', async () => {
-      const metricSelect = document.getElementById('pt-form-metric');
-      const companyInput = document.getElementById('pt-form-company');
-      const roleInput = document.getElementById('pt-form-role');
-      const notesInput = document.getElementById('pt-form-notes');
+      const metricId = document.getElementById('pt-form-metric').value;
+      const company = document.getElementById('pt-form-company').value;
+      const role = document.getElementById('pt-form-role').value;
+      const notes = document.getElementById('pt-form-notes').value;
 
-      await TrackerStorage.addLog({
-        metricId: metricSelect.value,
-        count: 1,
-        company: companyInput.value,
-        role: roleInput.value,
-        notes: notesInput.value
-      });
+      await TrackerStorage.addLog({ metricId, count: 1, company, role, notes });
 
-      companyInput.value = '';
-      roleInput.value = '';
-      notesInput.value = '';
+      document.getElementById('pt-form-company').value = '';
+      document.getElementById('pt-form-role').value = '';
+      document.getElementById('pt-form-notes').value = '';
       isDetailFormOpen = false;
       detailsForm.classList.add('pt-hidden');
       await refreshData();
     });
 
-    // Add custom tracker
-    addCustomBtn.addEventListener('click', () => {
+    addTrackerBtn.addEventListener('click', () => {
       openCreateTrackerModal();
     });
   }
@@ -284,55 +275,104 @@
   function updateDock() {
     if (!stats) return;
 
-    const dockLabel = document.getElementById('pt-dock-label');
-    const dockStreak = document.getElementById('pt-dock-streak');
-    const todayCountEl = document.getElementById('pt-today-count');
-    const leetcodeCountEl = document.getElementById('pt-leetcode-count');
-    const statWeekEl = document.getElementById('pt-stat-week');
-    const statMonthEl = document.getElementById('pt-stat-month');
-    const statTotalEl = document.getElementById('pt-stat-total');
-    const trackerListEl = document.getElementById('pt-tracker-list');
-    const formMetricSelect = document.getElementById('pt-form-metric');
-
     const jobsToday = stats.today.jobs || 0;
-    const leetToday = stats.today.leetcode || 0;
 
-    if (dockLabel) dockLabel.textContent = `${jobsToday} Jobs Today`;
-    if (dockStreak) dockStreak.textContent = `🔥 ${stats.currentStreak || 0}`;
-    if (todayCountEl) todayCountEl.textContent = jobsToday;
-    if (leetcodeCountEl) leetcodeCountEl.textContent = leetToday;
+    const el = (id) => document.getElementById(id);
 
-    if (statWeekEl) statWeekEl.textContent = stats.thisWeek.jobs || 0;
-    if (statMonthEl) statMonthEl.textContent = stats.thisMonth.jobs || 0;
-    if (statTotalEl) statTotalEl.textContent = stats.totals.jobs || 0;
+    el('pt-dock-label').textContent = jobsToday + ' Jobs Today';
+    el('pt-dock-streak').textContent = (stats.currentStreak || 0) + ' day streak';
+    el('pt-today-count').textContent = jobsToday;
+    el('pt-stat-week').textContent = stats.thisWeek.jobs || 0;
+    el('pt-stat-month').textContent = stats.thisMonth.jobs || 0;
+    el('pt-stat-total').textContent = stats.totals.jobs || 0;
 
-    // Populate dropdown
-    if (formMetricSelect) {
-      formMetricSelect.innerHTML = '';
+    // Metric dropdown
+    const select = el('pt-form-metric');
+    if (select) {
+      select.innerHTML = '';
       metrics.forEach(m => {
         const opt = document.createElement('option');
         opt.value = m.id;
-        opt.textContent = `${m.icon || ''} ${m.name}`;
-        formMetricSelect.appendChild(opt);
+        opt.textContent = m.name;
+        select.appendChild(opt);
       });
     }
 
-    // Populate trackers filter list
-    if (trackerListEl) {
-      trackerListEl.innerHTML = '';
+    // Secondary quick-add buttons (non-jobs metrics)
+    const secContainer = el('pt-secondary-actions');
+    if (secContainer) {
+      secContainer.innerHTML = '';
+      metrics.filter(m => m.id !== 'jobs').forEach(m => {
+        const todayC = stats.today[m.id] || 0;
+        const btn = document.createElement('button');
+        btn.className = 'pt-btn-metric';
+        btn.style.color = m.color;
+        btn.style.borderColor = m.color + '60';
+        btn.textContent = '+1 ' + m.name + ' (' + todayC + ')';
+        btn.addEventListener('click', async () => {
+          await TrackerStorage.addLog({ metricId: m.id, count: 1 });
+          await refreshData();
+        });
+        secContainer.appendChild(btn);
+      });
+    }
+
+    // Trackers list with delete
+    const trackerList = el('pt-tracker-list');
+    if (trackerList) {
+      trackerList.innerHTML = '';
       metrics.forEach(m => {
         const isVisible = activeVisibleMetrics.has(m.id);
         const item = document.createElement('div');
         item.className = 'pt-tracker-item';
-        item.innerHTML = `
-          <div class="pt-tracker-left">
-            <div class="pt-checkbox" style="background-color: ${isVisible ? m.color : 'transparent'}; border: 2px solid ${m.color};">
-              ${isVisible ? '✓' : ''}
-            </div>
-            <span style="font-weight: 500; color: #3c4043;">${m.name}</span>
-          </div>
-          <span style="font-size: 11px; color: #5f6368; font-weight: 600;">${stats.totals[m.id] || 0}</span>
-        `;
+
+        const left = document.createElement('div');
+        left.className = 'pt-tracker-left';
+
+        const cb = document.createElement('div');
+        cb.className = 'pt-checkbox';
+        cb.style.backgroundColor = isVisible ? m.color : 'transparent';
+        cb.style.border = '2px solid ' + m.color;
+        if (isVisible) cb.textContent = '\u2713';
+
+        const label = document.createElement('span');
+        label.style.fontWeight = '500';
+        label.style.color = '#3c4043';
+        label.textContent = m.name;
+
+        left.appendChild(cb);
+        left.appendChild(label);
+
+        const right = document.createElement('div');
+        right.className = 'pt-tracker-right';
+
+        const countSpan = document.createElement('span');
+        countSpan.style.fontSize = '11px';
+        countSpan.style.color = '#5f6368';
+        countSpan.style.fontWeight = '600';
+        countSpan.textContent = stats.totals[m.id] || 0;
+        right.appendChild(countSpan);
+
+        // Delete button (only for non-default trackers)
+        if (!m.isDefault) {
+          const delBtn = document.createElement('button');
+          delBtn.className = 'pt-delete-tracker-btn';
+          delBtn.textContent = '\u00d7';
+          delBtn.title = 'Delete "' + m.name + '" tracker';
+          delBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (confirm('Delete tracker "' + m.name + '" and all its entries?')) {
+              await TrackerStorage.deleteMetric(m.id);
+              activeVisibleMetrics.delete(m.id);
+              await refreshData();
+            }
+          });
+          right.appendChild(delBtn);
+        }
+
+        item.appendChild(left);
+        item.appendChild(right);
+
         item.addEventListener('click', () => {
           if (activeVisibleMetrics.has(m.id)) {
             if (activeVisibleMetrics.size > 1) activeVisibleMetrics.delete(m.id);
@@ -342,226 +382,219 @@
           updateDock();
           renderBadges();
         });
-        trackerListEl.appendChild(item);
+
+        trackerList.appendChild(item);
       });
     }
   }
 
-  // -------------------------------------------------------------
-  // 3. DAY DETAIL INSPECTOR MODAL
-  // -------------------------------------------------------------
-  async function openDayModal(dateStr, startWithForm = false) {
-    const existing = document.getElementById('pt-day-modal');
-    if (existing) existing.remove();
+  // ---------------------------------------------------------------
+  // 3. DAY MODAL — view entries, add entries, delete entries
+  // ---------------------------------------------------------------
+  async function openDayModal(dateStr, focusForm) {
+    const old = document.getElementById('pt-day-modal');
+    if (old) old.remove();
 
     const logs = await TrackerStorage.getLogs({ startDate: dateStr, endDate: dateStr });
-    const modal = document.createElement('div');
-    modal.id = 'pt-day-modal';
-    modal.className = 'pt-modal-backdrop';
+    const mMap = metricsMap();
 
-    const metricsMap = {};
-    metrics.forEach(m => { metricsMap[m.id] = m; });
+    const backdrop = document.createElement('div');
+    backdrop.id = 'pt-day-modal';
+    backdrop.className = 'pt-modal-backdrop';
 
-    modal.innerHTML = `
-      <div class="pt-modal-dialog" id="pt-modal-dialog">
-        <div class="pt-modal-header">
-          <div>
-            <div style="font-size: 15px; font-weight: 600; color: #202124;">${dateStr} Activity</div>
-            <div style="font-size: 11px; color: #5f6368;" id="pt-modal-day-summary">
-              ${logs.length} entries recorded
-            </div>
-          </div>
-          <button class="pt-close-btn" id="pt-modal-close">&times;</button>
-        </div>
+    // Count summary per metric
+    const counts = {};
+    logs.forEach(l => {
+      counts[l.metricId] = (counts[l.metricId] || 0) + (l.count || 1);
+    });
+    const summaryParts = Object.entries(counts).map(([id, c]) => {
+      const m = mMap[id];
+      return c + ' ' + (m ? m.name : id);
+    });
+    const summaryText = summaryParts.length > 0 ? summaryParts.join(', ') : 'No entries';
 
-        <div class="pt-modal-body">
-          <!-- Entries List -->
-          <div id="pt-modal-entries" style="display: flex; flex-direction: column; gap: 8px;">
-            ${logs.map(log => {
-              const m = metricsMap[log.metricId] || { name: log.metricId, color: '#1a73e8', icon: '🎯' };
-              return `
-                <div class="pt-entry-item" data-id="${log.id}">
-                  <div style="display: flex; gap: 10px; align-items: flex-start;">
-                    <span style="font-size: 16px;">${m.icon || '🎯'}</span>
-                    <div>
-                      <div style="font-weight: 600; color: #202124;">
-                        ${log.company || m.name}
-                        ${log.role ? `<span style="font-weight: normal; color: #5f6368;"> · ${log.role}</span>` : ''}
-                      </div>
-                      ${log.notes ? `<div style="font-size: 11px; color: #5f6368; margin-top: 2px;">${log.notes}</div>` : ''}
-                      <div style="font-size: 10px; color: ${m.color}; font-weight: 600; margin-top: 3px;">
-                        ${m.name} (+${log.count || 1})
-                      </div>
-                    </div>
-                  </div>
-                  <button class="pt-delete-entry" data-id="${log.id}" title="Delete entry">✕</button>
-                </div>
-              `;
-            }).join('')}
-            ${logs.length === 0 ? `<div style="text-align:center; color:#80868b; font-size:12px; padding:16px;">No entries logged for this date yet.</div>` : ''}
-          </div>
+    // Build entries HTML
+    let entriesHTML = '';
+    if (logs.length === 0) {
+      entriesHTML = '<div class="pt-empty-state">No entries logged for this date.</div>';
+    } else {
+      logs.forEach(log => {
+        const m = mMap[log.metricId] || { name: log.metricId, color: '#1a73e8' };
+        const mainText = log.company || m.name;
+        const sub = log.role ? log.role : '';
+        const notes = log.notes ? log.notes : '';
+        const time = formatTime(log.timestamp);
 
-          <!-- Add Entry Form -->
-          <div style="border-top: 1px solid #e8eaed; padding-top: 12px;">
-            <div style="font-size: 11px; font-weight: 600; color: #5f6368; text-transform: uppercase; margin-bottom: 8px;">
-              + Add entry for this date
-            </div>
-            <div style="display: flex; flex-direction: column; gap: 6px;">
-              <select id="pt-modal-select-metric" style="padding: 6px; font-size: 12px; border-radius: 4px; border: 1px solid #dadce0;">
-                ${metrics.map(m => `<option value="${m.id}">${m.icon || ''} ${m.name}</option>`).join('')}
-              </select>
-              <input type="text" id="pt-modal-company" placeholder="Company / Problem name (e.g. Google, Two Sum)" style="padding: 6px; font-size: 12px; border-radius: 4px; border: 1px solid #dadce0;" />
-              <input type="text" id="pt-modal-role" placeholder="Role / Tag (e.g. SWE Intern, Medium)" style="padding: 6px; font-size: 12px; border-radius: 4px; border: 1px solid #dadce0;" />
-              <input type="text" id="pt-modal-notes" placeholder="Notes or link" style="padding: 6px; font-size: 12px; border-radius: 4px; border: 1px solid #dadce0;" />
-              <button class="pt-btn-primary" id="pt-modal-add-btn" style="padding: 6px 12px; font-size: 12px;">Add to ${dateStr}</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
+        entriesHTML += [
+          '<div class="pt-entry-item" data-id="' + log.id + '">',
+            '<div class="pt-entry-dot" style="background:' + m.color + '"></div>',
+            '<div class="pt-entry-details">',
+              '<div class="pt-entry-main">' + mainText + '</div>',
+              sub ? '<div class="pt-entry-sub">' + sub + '</div>' : '',
+              notes ? '<div class="pt-entry-sub" style="font-style:italic;">' + notes + '</div>' : '',
+              '<div class="pt-entry-meta">' + m.name + ' &middot; ' + time + '</div>',
+            '</div>',
+            '<button class="pt-delete-entry" data-id="' + log.id + '" title="Delete">&times;</button>',
+          '</div>'
+        ].join('');
+      });
+    }
 
-    document.body.appendChild(modal);
-
-    // Modal listeners
-    modal.querySelector('#pt-modal-close').addEventListener('click', () => modal.remove());
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.remove();
+    // Metric options
+    let metricOptions = '';
+    metrics.forEach(m => {
+      metricOptions += '<option value="' + m.id + '">' + m.name + '</option>';
     });
 
-    // Delete buttons
-    modal.querySelectorAll('.pt-delete-entry').forEach(btn => {
-      btn.addEventListener('click', async () => {
+    backdrop.innerHTML = [
+      '<div class="pt-modal-dialog">',
+        '<div class="pt-modal-header">',
+          '<div>',
+            '<div class="pt-modal-header-title">' + formatDateNice(dateStr) + '</div>',
+            '<div class="pt-modal-header-sub">' + summaryText + '</div>',
+          '</div>',
+          '<button class="pt-close-btn" id="pt-modal-close">&times;</button>',
+        '</div>',
+        '<div class="pt-modal-body">',
+          '<div id="pt-modal-entries">' + entriesHTML + '</div>',
+          '<div class="pt-modal-form">',
+            '<label>Add entry for ' + dateStr + '</label>',
+            '<select id="pt-modal-metric">' + metricOptions + '</select>',
+            '<div class="pt-modal-form-row">',
+              '<input type="text" id="pt-modal-company" placeholder="Company or title" />',
+              '<input type="text" id="pt-modal-role" placeholder="Role or tag" />',
+            '</div>',
+            '<input type="text" id="pt-modal-notes" placeholder="Notes or link (optional)" />',
+            '<button class="pt-btn-primary" id="pt-modal-add" style="padding:6px;font-size:12px;">Add Entry</button>',
+          '</div>',
+        '</div>',
+      '</div>'
+    ].join('');
+
+    document.body.appendChild(backdrop);
+
+    // Close
+    backdrop.querySelector('#pt-modal-close').addEventListener('click', () => backdrop.remove());
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) backdrop.remove();
+    });
+
+    // Delete entry buttons
+    backdrop.querySelectorAll('.pt-delete-entry').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
         await TrackerStorage.deleteLog(btn.dataset.id);
-        modal.remove();
+        backdrop.remove();
         await refreshData();
         openDayModal(dateStr);
       });
     });
 
     // Add entry
-    modal.querySelector('#pt-modal-add-btn').addEventListener('click', async () => {
-      const metricId = modal.querySelector('#pt-modal-select-metric').value;
-      const company = modal.querySelector('#pt-modal-company').value;
-      const role = modal.querySelector('#pt-modal-role').value;
-      const notes = modal.querySelector('#pt-modal-notes').value;
+    backdrop.querySelector('#pt-modal-add').addEventListener('click', async () => {
+      const metricId = backdrop.querySelector('#pt-modal-metric').value;
+      const company = backdrop.querySelector('#pt-modal-company').value;
+      const role = backdrop.querySelector('#pt-modal-role').value;
+      const notes = backdrop.querySelector('#pt-modal-notes').value;
 
-      await TrackerStorage.addLog({
-        metricId,
-        date: dateStr,
-        count: 1,
-        company,
-        role,
-        notes
-      });
-
-      modal.remove();
+      await TrackerStorage.addLog({ metricId, date: dateStr, count: 1, company, role, notes });
+      backdrop.remove();
       await refreshData();
       openDayModal(dateStr);
     });
 
-    if (startWithForm) {
-      modal.querySelector('#pt-modal-company').focus();
+    if (focusForm) {
+      const companyInput = backdrop.querySelector('#pt-modal-company');
+      if (companyInput) setTimeout(() => companyInput.focus(), 50);
     }
   }
 
-  // -------------------------------------------------------------
-  // 4. CREATE CUSTOM TRACKER MODAL
-  // -------------------------------------------------------------
+  // ---------------------------------------------------------------
+  // 4. CREATE TRACKER MODAL
+  // ---------------------------------------------------------------
   function openCreateTrackerModal() {
-    const existing = document.getElementById('pt-create-modal');
-    if (existing) existing.remove();
+    const old = document.getElementById('pt-create-modal');
+    if (old) old.remove();
 
-    const modal = document.createElement('div');
-    modal.id = 'pt-create-modal';
-    modal.className = 'pt-modal-backdrop';
+    const colors = ['#1a73e8','#1e8e3e','#d93025','#f9ab00','#9334e6','#007b83','#e52592','#e37400'];
 
-    modal.innerHTML = `
-      <div class="pt-modal-dialog">
-        <div class="pt-modal-header">
-          <span style="font-weight: 600; color: #202124;">Create New Tracker</span>
-          <button class="pt-close-btn" id="pt-create-close">&times;</button>
-        </div>
-        <div class="pt-modal-body">
-          <label style="font-size: 12px; font-weight: 600; color: #5f6368;">Tracker Name</label>
-          <input type="text" id="pt-create-name" placeholder="e.g. Cold Emails, System Design, OA" style="padding: 8px; font-size: 13px; border: 1px solid #dadce0; border-radius: 6px;" />
+    const backdrop = document.createElement('div');
+    backdrop.id = 'pt-create-modal';
+    backdrop.className = 'pt-modal-backdrop';
 
-          <label style="font-size: 12px; font-weight: 600; color: #5f6368; margin-top: 6px;">Icon Emoji</label>
-          <input type="text" id="pt-create-icon" placeholder="e.g. ✉️, 📚, 💻" value="🎯" style="padding: 8px; font-size: 13px; border: 1px solid #dadce0; border-radius: 6px; width: 60px;" />
+    let colorBtns = '';
+    colors.forEach((c, i) => {
+      colorBtns += '<button type="button" class="pt-color-btn' + (i === 4 ? ' pt-selected' : '') + '" data-color="' + c + '" style="background:' + c + ';"></button>';
+    });
 
-          <label style="font-size: 12px; font-weight: 600; color: #5f6368; margin-top: 6px;">Color</label>
-          <div style="display: flex; gap: 8px;" id="pt-create-colors">
-            <button type="button" class="pt-color-btn" data-color="#1a73e8" style="width:24px; height:24px; border-radius:50%; background:#1a73e8; border:2px solid black; cursor:pointer;"></button>
-            <button type="button" class="pt-color-btn" data-color="#1e8e3e" style="width:24px; height:24px; border-radius:50%; background:#1e8e3e; border:none; cursor:pointer;"></button>
-            <button type="button" class="pt-color-btn" data-color="#d93025" style="width:24px; height:24px; border-radius:50%; background:#d93025; border:none; cursor:pointer;"></button>
-            <button type="button" class="pt-color-btn" data-color="#f9ab00" style="width:24px; height:24px; border-radius:50%; background:#f9ab00; border:none; cursor:pointer;"></button>
-            <button type="button" class="pt-color-btn" data-color="#9334e6" style="width:24px; height:24px; border-radius:50%; background:#9334e6; border:none; cursor:pointer;"></button>
-            <button type="button" class="pt-color-btn" data-color="#007b83" style="width:24px; height:24px; border-radius:50%; background:#007b83; border:none; cursor:pointer;"></button>
-          </div>
+    backdrop.innerHTML = [
+      '<div class="pt-modal-dialog" style="width:380px;">',
+        '<div class="pt-modal-header">',
+          '<div class="pt-modal-header-title">Create New Tracker</div>',
+          '<button class="pt-close-btn" id="pt-create-close">&times;</button>',
+        '</div>',
+        '<div class="pt-modal-body">',
+          '<div class="pt-modal-form" style="border:none;padding-top:0;">',
+            '<label>Name</label>',
+            '<input type="text" id="pt-create-name" placeholder="e.g. Cold Emails, System Design" />',
+            '<label>Unit label</label>',
+            '<input type="text" id="pt-create-unit" placeholder="e.g. emails, sessions" value="items" />',
+            '<label>Color</label>',
+            '<div style="display:flex;gap:8px;" id="pt-create-colors">' + colorBtns + '</div>',
+            '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">',
+              '<button class="pt-btn-secondary" id="pt-create-cancel">Cancel</button>',
+              '<button class="pt-btn-primary" id="pt-create-submit">Create</button>',
+            '</div>',
+          '</div>',
+        '</div>',
+      '</div>'
+    ].join('');
 
-          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;">
-            <button class="pt-btn-secondary" id="pt-create-cancel">Cancel</button>
-            <button class="pt-btn-primary" id="pt-create-submit">Create Tracker</button>
-          </div>
-        </div>
-      </div>
-    `;
+    document.body.appendChild(backdrop);
 
-    document.body.appendChild(modal);
-
-    let selectedColor = '#1a73e8';
-    modal.querySelectorAll('.pt-color-btn').forEach(btn => {
+    let selectedColor = '#9334e6';
+    backdrop.querySelectorAll('.pt-color-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        modal.querySelectorAll('.pt-color-btn').forEach(b => b.style.border = 'none');
-        btn.style.border = '2px solid black';
+        backdrop.querySelectorAll('.pt-color-btn').forEach(b => b.classList.remove('pt-selected'));
+        btn.classList.add('pt-selected');
         selectedColor = btn.dataset.color;
       });
     });
 
-    modal.querySelector('#pt-create-close').addEventListener('click', () => modal.remove());
-    modal.querySelector('#pt-create-cancel').addEventListener('click', () => modal.remove());
+    backdrop.querySelector('#pt-create-close').addEventListener('click', () => backdrop.remove());
+    backdrop.querySelector('#pt-create-cancel').addEventListener('click', () => backdrop.remove());
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop) backdrop.remove();
+    });
 
-    modal.querySelector('#pt-create-submit').addEventListener('click', async () => {
-      const name = modal.querySelector('#pt-create-name').value.trim();
-      const icon = modal.querySelector('#pt-create-icon').value.trim() || '🎯';
+    backdrop.querySelector('#pt-create-submit').addEventListener('click', async () => {
+      const name = backdrop.querySelector('#pt-create-name').value.trim();
+      const unit = backdrop.querySelector('#pt-create-unit').value.trim() || 'items';
       if (!name) return;
 
-      const created = await TrackerStorage.addMetric({
-        name,
-        color: selectedColor,
-        icon,
-        unit: 'items'
-      });
+      const created = await TrackerStorage.addMetric({ name, color: selectedColor, unit, icon: 'custom' });
       activeVisibleMetrics.add(created.id);
-      modal.remove();
+      backdrop.remove();
       await refreshData();
     });
   }
 
-  // -------------------------------------------------------------
-  // 5. OBSERVER & INITIALIZATION
-  // -------------------------------------------------------------
-  let debounceTimeout = null;
+  // ---------------------------------------------------------------
+  // 5. OBSERVER & INIT
+  // ---------------------------------------------------------------
+  let debounceTimer = null;
   const observer = new MutationObserver(() => {
-    clearTimeout(debounceTimeout);
-    debounceTimeout = setTimeout(() => {
-      renderBadges();
-    }, 250);
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => renderBadges(), 300);
   });
 
   async function init() {
     mountFloatingDock();
     await refreshData();
 
-    // Observe calendar DOM changes (view switching, month next/prev)
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+    observer.observe(document.body, { childList: true, subtree: true });
 
-    // Listen to real-time storage changes (e.g. from popup)
-    TrackerStorage.onChanged(() => {
-      refreshData();
-    });
+    TrackerStorage.onChanged(() => refreshData());
   }
 
   if (document.readyState === 'loading') {

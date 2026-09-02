@@ -4,17 +4,17 @@ const TrackerStorage = (() => {
     {
       id: 'jobs',
       name: 'Job Applications',
-      color: '#1a73e8', // Google Blue
-      icon: '🎯',
+      color: '#1a73e8',
+      icon: 'briefcase',
       unit: 'jobs',
       isDefault: true,
       createdAt: '2026-09-01T00:00:00.000Z'
     },
     {
       id: 'leetcode',
-      name: 'LeetCode Problems',
-      color: '#1e8e3e', // Google Green
-      icon: '💡',
+      name: 'LeetCode',
+      color: '#1e8e3e',
+      icon: 'code',
       unit: 'problems',
       isDefault: true,
       createdAt: '2026-09-01T00:00:00.000Z'
@@ -33,7 +33,6 @@ const TrackerStorage = (() => {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       return chrome.storage.local;
     }
-    // Fallback for non-extension context
     return {
       get: (keys, cb) => {
         const result = {};
@@ -63,7 +62,6 @@ const TrackerStorage = (() => {
           if (result.metrics && Array.isArray(result.metrics) && result.metrics.length > 0) {
             resolve(result.metrics);
           } else {
-            // Seed default
             getStorageArea().set({ metrics: DEFAULT_METRICS }, () => {
               resolve(DEFAULT_METRICS);
             });
@@ -84,7 +82,7 @@ const TrackerStorage = (() => {
         name: name.trim(),
         unit: (unit || 'items').trim(),
         color: color || '#1a73e8',
-        icon: icon || '🎯',
+        icon: icon || 'target',
         isDefault: false,
         createdAt: new Date().toISOString()
       };
@@ -110,7 +108,6 @@ const TrackerStorage = (() => {
           if (filter.startDate) logs = logs.filter(l => l.date >= filter.startDate);
           if (filter.endDate) logs = logs.filter(l => l.date <= filter.endDate);
           if (filter.metricId) logs = logs.filter(l => l.metricId === filter.metricId);
-          // Sort newest first
           logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
           resolve(logs);
         });
@@ -178,7 +175,7 @@ const TrackerStorage = (() => {
       const thisWeek = {};
       const thisMonth = {};
       const totals = {};
-      const dailyMap = {}; // dateStr -> { metricId -> count }
+      const dailyMap = {};
 
       metrics.forEach(m => {
         today[m.id] = 0;
@@ -207,7 +204,6 @@ const TrackerStorage = (() => {
         dailyMap[l.date][mId] = (dailyMap[l.date][mId] || 0) + cnt;
       });
 
-      // Calculate streak for job applications
       const jobDates = Object.keys(dailyMap)
         .filter(d => (dailyMap[d]['jobs'] || 0) > 0)
         .sort();
