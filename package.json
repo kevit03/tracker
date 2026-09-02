@@ -1,0 +1,13 @@
+{
+  "name": "job-application-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimalistic job application & activity tracker Chrome extension with Google Calendar stats dashboard",
+  "scripts": {
+    "dev:server": "npm --prefix apps/app/server run dev",
+    "dev:client": "npm --prefix apps/app/client run dev",
+    "build:client": "npm --prefix apps/app/client run build",
+    "build": "npm run build:client",
+    "start": "node apps/app/server/server.js"
+  }
+}

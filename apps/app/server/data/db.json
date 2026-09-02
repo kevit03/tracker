@@ -1,0 +1,23 @@
+{
+  "metrics": [
+    {
+      "id": "jobs",
+      "name": "Job Applications",
+      "color": "#1a73e8",
+      "icon": "briefcase",
+      "unit": "jobs",
+      "isDefault": true,
+      "createdAt": "2026-09-02T12:00:00.000Z"
+    },
+    {
+      "id": "leetcode",
+      "name": "LeetCode Problems",
+      "color": "#1e8e3e",
+      "icon": "code",
+      "unit": "problems",
+      "isDefault": true,
+      "createdAt": "2026-09-02T12:00:00.000Z"
+    }
+  ],
+  "logs": []
+}
