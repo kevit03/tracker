@@ -23,14 +23,32 @@
   }
 
   function parseDateFromElement(el) {
+    if (!el) return null;
     if (el.dataset && el.dataset.datekey) {
       return dateFromDateKey(el.dataset.datekey);
     }
-    const label = el.getAttribute('aria-label') || '';
-    const match = label.match(/([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/);
-    if (match) {
-      const d = new Date(match[1] + ' ' + match[2] + ', ' + match[3]);
-      if (!isNaN(d.getTime())) return TrackerStorage.getLocalDateStr(d);
+    const childWithKey = el.querySelector && el.querySelector('[data-datekey]');
+    if (childWithKey && childWithKey.dataset && childWithKey.dataset.datekey) {
+      return dateFromDateKey(childWithKey.dataset.datekey);
+    }
+    if (el.dataset && el.dataset.date) {
+      return el.dataset.date;
+    }
+    const childWithDate = el.querySelector && el.querySelector('[data-date]');
+    if (childWithDate && childWithDate.dataset && childWithDate.dataset.date) {
+      return childWithDate.dataset.date;
+    }
+    const label = el.getAttribute('aria-label') ||
+      (el.querySelector && el.querySelector('[aria-label]') && el.querySelector('[aria-label]').getAttribute('aria-label')) || '';
+    if (label) {
+      const match = label.match(/(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:,?\s*(\d{4}))?/i);
+      if (match) {
+        const month = match[1];
+        const day = match[2];
+        const year = match[3] || new Date().getFullYear();
+        const d = new Date(`${month} ${day}, ${year}`);
+        if (!isNaN(d.getTime())) return TrackerStorage.getLocalDateStr(d);
+      }
     }
     return null;
   }
@@ -120,21 +138,49 @@
     updateDock();
   }
 
+  function ensureQuickAddButton(cell, dateStr) {
+    if (cell.querySelector('.pt-quick-add-cell')) return;
+    const addBtn = document.createElement('button');
+    addBtn.className = 'pt-quick-add-cell';
+    addBtn.title = 'Log entry for ' + dateStr;
+    addBtn.textContent = '+';
+    addBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      openDayModal(dateStr, true);
+    });
+    cell.appendChild(addBtn);
+  }
+
   // ---------------------------------------------------------------
   // 1. DAY CELL BADGES
   // ---------------------------------------------------------------
   function renderBadges() {
     if (!stats || !metrics.length) return;
 
-    const cells = document.querySelectorAll('[data-datekey]');
+    // Target cells via role="gridcell" and [data-datekey]
+    const candidates = document.querySelectorAll('[role="gridcell"], [data-datekey]');
+    const seenCells = new Set();
 
-    cells.forEach(cell => {
-      const dateStr = parseDateFromElement(cell);
+    candidates.forEach(el => {
+      // Target the actual day cell container
+      const cell = el.getAttribute('role') === 'gridcell' ? el : (el.closest('[role="gridcell"]') || el);
+      if (seenCells.has(cell)) return;
+      seenCells.add(cell);
+
+      const dateStr = parseDateFromElement(cell) || parseDateFromElement(el);
       if (!dateStr) return;
 
       const computedPos = window.getComputedStyle(cell).position;
       if (computedPos === 'static') {
         cell.style.position = 'relative';
+      }
+
+      // Calculate header offset to position badges directly under the date
+      const headerEl = cell.querySelector('h2, [role="heading"], button, [class*="header"]') || cell.firstElementChild;
+      let topOffset = 26;
+      if (headerEl && headerEl.offsetHeight > 0 && headerEl.offsetHeight < 60) {
+        topOffset = Math.max(24, headerEl.offsetTop + headerEl.offsetHeight + 2);
       }
 
       const dateCounts = stats.dailyMap[dateStr] || {};
@@ -150,26 +196,50 @@
 
       const existing = cell.querySelector('.pt-cell-overlay');
       if (existing && existing.dataset.stateKey === stateKey) {
+        existing.style.top = topOffset + 'px';
+        ensureQuickAddButton(cell, dateStr);
         return;
       }
 
       if (existing) existing.remove();
 
+      // If no counts to display for this day, don't leave an empty overlay
+      if (stateKeyParts.length === 0) {
+        ensureQuickAddButton(cell, dateStr);
+        return;
+      }
+
       const overlay = document.createElement('div');
       overlay.className = 'pt-cell-overlay';
       overlay.dataset.stateKey = stateKey;
+      overlay.style.top = topOffset + 'px';
 
       metrics.forEach(m => {
         if (!activeVisibleMetrics.has(m.id)) return;
         const count = dateCounts[m.id] || 0;
         if (count <= 0) return;
 
-        const badge = document.createElement('span');
+        const badge = document.createElement('div');
         badge.className = 'pt-badge';
-        badge.style.backgroundColor = m.color + '1a';
+        badge.style.backgroundColor = m.color + '18';
         badge.style.color = m.color;
-        badge.title = count + ' ' + m.name + ' on ' + dateStr;
-        badge.textContent = count + ' ' + m.name;
+        badge.style.borderLeftColor = m.color;
+
+        const label = m.id === 'jobs'
+          ? (count === 1 ? '1 Job Applied' : count + ' Jobs Applied')
+          : (count + ' ' + m.name);
+        badge.title = label + ' on ' + dateStr + '. Click to view details.';
+
+        const dot = document.createElement('span');
+        dot.className = 'pt-badge-dot';
+        dot.style.backgroundColor = m.color;
+
+        const text = document.createElement('span');
+        text.className = 'pt-badge-text';
+        text.textContent = label;
+
+        badge.appendChild(dot);
+        badge.appendChild(text);
 
         badge.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -180,19 +250,8 @@
         overlay.appendChild(badge);
       });
 
-      // Hover + button
-      const addBtn = document.createElement('button');
-      addBtn.className = 'pt-quick-add-cell';
-      addBtn.title = 'Log entry for ' + dateStr;
-      addBtn.textContent = '+';
-      addBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        openDayModal(dateStr, true);
-      });
-      overlay.appendChild(addBtn);
-
       cell.appendChild(overlay);
+      ensureQuickAddButton(cell, dateStr);
     });
   }
 
@@ -734,7 +793,7 @@
     if (isOnlyInternal) return;
 
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => renderBadges(), 300);
+    debounceTimer = setTimeout(() => renderBadges(), 100);
   });
 
   async function init() {
@@ -746,6 +805,14 @@
     TrackerStorage.onChanged(() => refreshData());
     if (typeof TrackerAuth !== 'undefined') {
       TrackerAuth.onAuthChanged(() => refreshData());
+    }
+
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && (changes.logs || changes.metrics)) {
+          refreshData();
+        }
+      });
     }
   }
 
