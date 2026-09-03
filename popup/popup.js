@@ -100,17 +100,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
   });
 
+  function notifyCalendarTabs() {
+    if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
+      chrome.tabs.query({ url: '*://calendar.google.com/*' }, (tabs) => {
+        if (tabs && tabs.length > 0) {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { type: 'PT_REFRESH' }).catch(() => {});
+          });
+        }
+      });
+    }
+  }
+
   // +1
   el('quick-add-btn').addEventListener('click', async () => {
     el('metric-count').classList.add('bump');
     setTimeout(() => el('metric-count').classList.remove('bump'), 150);
     await TrackerStorage.addLog({ metricId: activeMetricId, count: 1 });
+    notifyCalendarTabs();
     await loadData();
   });
 
   // -1
   el('undo-btn').addEventListener('click', async () => {
     await TrackerStorage.undoLastLog(activeMetricId);
+    notifyCalendarTabs();
     await loadData();
   });
 
@@ -130,6 +144,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       role: el('detail-role').value,
       notes: el('detail-notes').value
     });
+    notifyCalendarTabs();
     el('detail-company').value = '';
     el('detail-role').value = '';
     el('detail-notes').value = '';

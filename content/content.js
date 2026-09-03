@@ -11,9 +11,30 @@
   // ---------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------
+  const MONTHS_MAP = {
+    january: 1, jan: 1, february: 2, feb: 2, march: 3, mar: 3,
+    april: 4, apr: 4, may: 5, june: 6, jun: 6,
+    july: 7, jul: 7, august: 8, aug: 8, september: 9, sep: 9,
+    october: 10, oct: 10, november: 11, nov: 11, december: 12, dec: 12
+  };
+
   function dateFromDateKey(key) {
     const num = parseInt(key, 10);
     if (isNaN(num)) return null;
+
+    // 1. Google Calendar internal bitshift encoding:
+    // dateKey = (year - 1970) * 512 + (month - 1) * 32 + day + 32
+    if (num >= 25000) {
+      const yearOffset = (num - 32) % 512;
+      const year = Math.floor((num - 32 - yearOffset) / 512) + 1970;
+      const day = yearOffset % 32;
+      const month = Math.floor((yearOffset - day) / 32) + 1;
+      if (year >= 1970 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+    }
+
+    // 2. Fallback: Days since Unix epoch (or test mock)
     const ms = num * 86400000 + 43200000;
     const d = new Date(ms);
     const year = d.getUTCFullYear();
@@ -24,32 +45,60 @@
 
   function parseDateFromElement(el) {
     if (!el) return null;
+
+    // 1. Check data-date (ISO format YYYY-MM-DD)
+    if (el.dataset && el.dataset.date && /^\d{4}-\d{2}-\d{2}$/.test(el.dataset.date)) {
+      return el.dataset.date;
+    }
+    const childDate = el.querySelector && el.querySelector('[data-date]');
+    if (childDate && childDate.dataset && childDate.dataset.date && /^\d{4}-\d{2}-\d{2}$/.test(childDate.dataset.date)) {
+      return childDate.dataset.date;
+    }
+
+    // 2. Check aria-label on element or any child header/button
+    const labelSources = [
+      el.getAttribute && el.getAttribute('aria-label'),
+      el.querySelector && el.querySelector('[aria-label]') && el.querySelector('[aria-label]').getAttribute('aria-label'),
+      el.querySelector && el.querySelector('h2, [role="heading"], button') && (el.querySelector('h2, [role="heading"], button').getAttribute('aria-label') || el.querySelector('h2, [role="heading"], button').textContent)
+    ];
+
+    for (const label of labelSources) {
+      if (!label) continue;
+
+      // Day-first: "2 September 2026", "2nd September 2026", "2 Sep"
+      const mDayFirst = label.match(/\b(\d{1,2})(?:st|nd|rd|th)?[,\s]+\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b(?:[,\s]+(\d{4}))?/i);
+      if (mDayFirst) {
+        const day = parseInt(mDayFirst[1], 10);
+        const month = MONTHS_MAP[mDayFirst[2].toLowerCase()];
+        const year = mDayFirst[3] ? parseInt(mDayFirst[3], 10) : new Date().getFullYear();
+        if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+      }
+
+      // Month-first: "September 2, 2026", "September 2nd", "Wednesday, September 2"
+      const mMonthFirst = label.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b[,\s]+(\d{1,2})(?:st|nd|rd|th)?\b(?:[,\s]+(\d{4}))?/i);
+      if (mMonthFirst) {
+        const month = MONTHS_MAP[mMonthFirst[1].toLowerCase()];
+        const day = parseInt(mMonthFirst[2], 10);
+        const year = mMonthFirst[3] ? parseInt(mMonthFirst[3], 10) : new Date().getFullYear();
+        if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+      }
+    }
+
+    // 3. Check data-datekey with bitshift decode
     if (el.dataset && el.dataset.datekey) {
-      return dateFromDateKey(el.dataset.datekey);
+      const d = dateFromDateKey(el.dataset.datekey);
+      if (d) return d;
     }
     const childWithKey = el.querySelector && el.querySelector('[data-datekey]');
     if (childWithKey && childWithKey.dataset && childWithKey.dataset.datekey) {
-      return dateFromDateKey(childWithKey.dataset.datekey);
+      const d = dateFromDateKey(childWithKey.dataset.datekey);
+      if (d) return d;
     }
-    if (el.dataset && el.dataset.date) {
-      return el.dataset.date;
-    }
-    const childWithDate = el.querySelector && el.querySelector('[data-date]');
-    if (childWithDate && childWithDate.dataset && childWithDate.dataset.date) {
-      return childWithDate.dataset.date;
-    }
-    const label = el.getAttribute('aria-label') ||
-      (el.querySelector && el.querySelector('[aria-label]') && el.querySelector('[aria-label]').getAttribute('aria-label')) || '';
-    if (label) {
-      const match = label.match(/(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:,?\s*(\d{4}))?/i);
-      if (match) {
-        const month = match[1];
-        const day = match[2];
-        const year = match[3] || new Date().getFullYear();
-        const d = new Date(`${month} ${day}, ${year}`);
-        if (!isNaN(d.getTime())) return TrackerStorage.getLocalDateStr(d);
-      }
-    }
+
     return null;
   }
 
@@ -810,6 +859,14 @@
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'local' && (changes.logs || changes.metrics)) {
+          refreshData();
+        }
+      });
+    }
+
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+      chrome.runtime.onMessage.addListener((msg) => {
+        if (msg && msg.type === 'PT_REFRESH') {
           refreshData();
         }
       });
