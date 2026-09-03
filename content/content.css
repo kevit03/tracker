@@ -91,6 +91,16 @@
   transform: scale(1.1);
 }
 
+/* Suppress any badge or quick-add from appearing in column headers or nav headers */
+[role="columnheader"] .pt-cell-overlay,
+[role="columnheader"] .pt-quick-add-cell,
+header .pt-cell-overlay,
+header .pt-quick-add-cell,
+aside .pt-cell-overlay,
+aside .pt-quick-add-cell {
+  display: none !important;
+}
+
 /* ===== Floating dock ===== */
 #pt-floating-dock {
   position: fixed;

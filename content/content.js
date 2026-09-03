@@ -207,17 +207,33 @@
   function renderBadges() {
     if (!stats || !metrics.length) return;
 
-    // Target cells via role="gridcell" and [data-datekey]
-    const candidates = document.querySelectorAll('[role="gridcell"], [data-datekey]');
+    // Clean up any stray overlays or quick-add buttons in column headers or nav headers
+    document.querySelectorAll('.pt-cell-overlay, .pt-quick-add-cell').forEach(item => {
+      const parent = item.parentElement;
+      if (!parent ||
+          parent.getAttribute('role') === 'columnheader' ||
+          parent.closest('[role="columnheader"], [role="rowheader"], header, aside, nav') ||
+          (parent.offsetHeight > 0 && parent.offsetHeight < 50)) {
+        item.remove();
+      }
+    });
+
+    // Target actual calendar day cells (gridcells with sufficient height)
+    const candidates = document.querySelectorAll('[role="gridcell"]');
     const seenCells = new Set();
 
-    candidates.forEach(el => {
-      // Target the actual day cell container
-      const cell = el.getAttribute('role') === 'gridcell' ? el : (el.closest('[role="gridcell"]') || el);
+    candidates.forEach(cell => {
+      // Never render inside a column header, row header, sidebar, or header bar
+      if (cell.getAttribute('role') === 'columnheader' ||
+          cell.closest('[role="columnheader"], [role="rowheader"], header, aside, nav') ||
+          (cell.offsetHeight > 0 && cell.offsetHeight < 50)) {
+        return;
+      }
+
       if (seenCells.has(cell)) return;
       seenCells.add(cell);
 
-      const dateStr = parseDateFromElement(cell) || parseDateFromElement(el);
+      const dateStr = parseDateFromElement(cell);
       if (!dateStr) return;
 
       const computedPos = window.getComputedStyle(cell).position;
