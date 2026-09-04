@@ -50,6 +50,17 @@
       </div>
     </div>
 
+    <!-- Daily Goal Progress Meter -->
+    <div class="goal-meter" id="goal-meter">
+      <div class="goal-header">
+        <span class="goal-label">Daily Goal: <strong id="goal-target-num" title="Click to edit daily goal">5</strong></span>
+        <span class="goal-status" id="goal-status-text">0 / 5</span>
+      </div>
+      <div class="goal-bar-wrap">
+        <div class="goal-bar-fill" id="goal-bar-fill"></div>
+      </div>
+    </div>
+
     <div class="details-section">
       <button id="toggle-details-btn" class="details-toggle">
         <span>+ Add details (company, role, notes)</span>
@@ -82,6 +93,27 @@
       </div>
     </div>
 
+    <!-- 30-Day Activity Summary Section -->
+    <div class="activity-section">
+      <button id="toggle-activity-btn" class="activity-toggle">
+        <span>30-Day Activity</span>
+        <span id="activity-arrow" class="arrow-down"></span>
+      </button>
+      <div id="activity-panel" class="activity-panel hidden">
+        <div class="activity-bars" id="activity-bars"></div>
+        <div class="activity-stats-grid">
+          <div><div class="act-stat-num" id="pop-act-total">0</div><div class="act-stat-lbl">30D Total</div></div>
+          <div><div class="act-stat-num" id="pop-act-avg">0.0</div><div class="act-stat-lbl">Daily Avg</div></div>
+          <div><div class="act-stat-num" id="pop-act-days">0</div><div class="act-stat-lbl">Active Days</div></div>
+          <div><div class="act-stat-num" id="pop-act-best">0</div><div class="act-stat-lbl">Best Day</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="shortcuts-note">
+      <span>Shortcuts: Cmd+Shift+J (+1 Job), Cmd+Shift+L (+1 LeetCode)</span>
+    </div>
+
     <footer class="footer">
       <button id="open-calendar-btn" class="calendar-btn">
         View on Google Calendar
@@ -103,6 +135,10 @@
           <div class="form-group">
             <label for="new-metric-unit">Unit</label>
             <input type="text" id="new-metric-unit" placeholder="e.g. emails, sessions" value="items" />
+          </div>
+          <div class="form-group">
+            <label for="new-metric-goal">Daily Goal</label>
+            <input type="number" id="new-metric-goal" placeholder="e.g. 5" min="1" value="5" />
           </div>
           <div class="form-group">
             <label>Color</label>

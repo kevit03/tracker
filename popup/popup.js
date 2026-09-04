@@ -83,6 +83,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     el('stat-week').textContent = weekCount;
     el('stat-month').textContent = monthCount;
     el('stat-total').textContent = totalCount;
+
+    // Daily Goal progress
+    const dailyGoal = current.dailyGoal || (current.id === 'jobs' ? 5 : (current.id === 'leetcode' ? 2 : 1));
+    const goalTargetEl = el('goal-target-num');
+    if (goalTargetEl) {
+      goalTargetEl.textContent = dailyGoal;
+      goalTargetEl.onclick = async () => {
+        const val = prompt('Set daily goal for ' + current.name + ':', dailyGoal);
+        if (val !== null && val.trim() !== '') {
+          const num = parseInt(val.trim(), 10);
+          if (!isNaN(num) && num > 0) {
+            await TrackerStorage.setMetricGoal(current.id, num);
+            notifyCalendarTabs();
+            await loadData();
+          }
+        }
+      };
+    }
+
+    const goalStatusEl = el('goal-status-text');
+    if (goalStatusEl) {
+      if (todayCount >= dailyGoal) {
+        goalStatusEl.textContent = todayCount + ' / ' + dailyGoal + ' (Goal Met)';
+        goalStatusEl.style.color = '#1e8e3e';
+      } else {
+        goalStatusEl.textContent = todayCount + ' / ' + dailyGoal;
+        goalStatusEl.style.color = 'var(--text-main)';
+      }
+    }
+
+    const goalFillEl = el('goal-bar-fill');
+    if (goalFillEl) {
+      const pct = Math.min(100, Math.round((todayCount / dailyGoal) * 100));
+      goalFillEl.style.width = pct + '%';
+      goalFillEl.style.backgroundColor = todayCount >= dailyGoal ? '#1e8e3e' : current.color;
+      goalFillEl.classList.toggle('goal-met', todayCount >= dailyGoal);
+    }
+
+    renderActivityChart();
   }
 
   // Google Sign In / Sign Out
@@ -180,16 +219,71 @@ document.addEventListener('DOMContentLoaded', async () => {
     selectedColor = btn.dataset.color;
   });
 
+  async function renderActivityChart() {
+    const barsContainer = el('activity-bars');
+    if (!barsContainer) return;
+    const history = await TrackerStorage.getActivityHistory(30);
+
+    const totalEl = el('pop-act-total');
+    const avgEl = el('pop-act-avg');
+    const daysEl = el('pop-act-days');
+    const bestEl = el('pop-act-best');
+
+    if (totalEl) totalEl.textContent = history.totalCount;
+    if (avgEl) avgEl.textContent = history.dailyAverage;
+    if (daysEl) daysEl.textContent = history.activeDaysCount;
+    if (bestEl) bestEl.textContent = history.bestDay.count;
+
+    barsContainer.innerHTML = '';
+    const maxVal = Math.max(4, ...history.days.map(d => d.count));
+    const current = metrics.find(m => m.id === activeMetricId);
+    const color = current ? current.color : '#1a73e8';
+
+    history.days.forEach(day => {
+      const col = document.createElement('div');
+      col.className = 'pop-bar-col';
+
+      const heightPct = Math.round((day.count / maxVal) * 100);
+      const bar = document.createElement('div');
+      bar.className = 'pop-bar' + (day.count > 0 ? ' has-act' : '');
+      bar.style.height = (day.count > 0 ? Math.max(10, heightPct) : 4) + '%';
+      if (day.count > 0) {
+        bar.style.backgroundColor = color;
+      }
+
+      const tooltip = document.createElement('div');
+      tooltip.className = 'pop-bar-tooltip';
+      tooltip.textContent = day.label + ': ' + day.count;
+
+      col.appendChild(bar);
+      col.appendChild(tooltip);
+      barsContainer.appendChild(col);
+    });
+  }
+
+  el('toggle-activity-btn').addEventListener('click', () => {
+    const panel = el('activity-panel');
+    const arrow = el('activity-arrow');
+    panel.classList.toggle('hidden');
+    const isOpen = !panel.classList.contains('hidden');
+    arrow.classList.toggle('open', isOpen);
+    if (isOpen) renderActivityChart();
+  });
+
   el('new-metric-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = el('new-metric-name').value.trim();
     const unit = el('new-metric-unit').value.trim() || 'items';
+    const goalInput = el('new-metric-goal');
+    const dailyGoal = goalInput ? parseInt(goalInput.value, 10) || 5 : 5;
     if (!name) return;
 
-    const created = await TrackerStorage.addMetric({ name, color: selectedColor, unit, icon: 'custom' });
+    const created = await TrackerStorage.addMetric({ name, color: selectedColor, unit, dailyGoal, icon: 'custom' });
     activeMetricId = created.id;
     el('new-metric-name').value = '';
+    if (goalInput) goalInput.value = '5';
     el('new-metric-modal').classList.add('hidden');
+    notifyCalendarTabs();
     await loadData();
   });
 

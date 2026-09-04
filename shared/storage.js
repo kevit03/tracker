@@ -14,6 +14,7 @@ const TrackerStorage = (() => {
       color: '#1a73e8',
       icon: 'briefcase',
       unit: 'jobs',
+      dailyGoal: 5,
       isDefault: true,
       createdAt: '2026-09-01T00:00:00.000Z'
     },
@@ -23,6 +24,7 @@ const TrackerStorage = (() => {
       color: '#1e8e3e',
       icon: 'code',
       unit: 'problems',
+      dailyGoal: 2,
       isDefault: true,
       createdAt: '2026-09-01T00:00:00.000Z'
     }
@@ -131,7 +133,13 @@ const TrackerStorage = (() => {
             allMetrics = [...DEFAULT_METRICS];
             getStorageArea().set({ [STORAGE_KEYS.METRICS]: DEFAULT_METRICS });
           }
-          const filtered = allMetrics.filter(m => {
+          const filtered = allMetrics.map(m => {
+            let dailyGoal = m.dailyGoal;
+            if (!dailyGoal) {
+              dailyGoal = m.id === 'jobs' ? 5 : (m.id === 'leetcode' ? 2 : 1);
+            }
+            return { ...m, dailyGoal };
+          }).filter(m => {
             if (m.isDefault || m.id === 'jobs' || m.id === 'leetcode') return true;
             const owner = normalizeEmail(m.userEmail);
             if (!targetEmail) {
@@ -148,6 +156,25 @@ const TrackerStorage = (() => {
       return enqueueWrite(async () => {
         return new Promise(resolve => {
           getStorageArea().set({ [STORAGE_KEYS.METRICS]: Array.isArray(metrics) ? metrics : [] }, () => resolve(true));
+        });
+      });
+    },
+
+    async setMetricGoal(metricId, goalNumber) {
+      const goal = Math.max(1, parseInt(goalNumber, 10) || 1);
+      return enqueueWrite(async () => {
+        return new Promise(resolve => {
+          getStorageArea().get([STORAGE_KEYS.METRICS], result => {
+            let allMetrics = safeGetMetrics(result);
+            if (allMetrics.length === 0) allMetrics = [...DEFAULT_METRICS];
+            const updated = allMetrics.map(m => {
+              if (m.id === metricId) {
+                return { ...m, dailyGoal: goal };
+              }
+              return m;
+            });
+            getStorageArea().set({ [STORAGE_KEYS.METRICS]: updated }, () => resolve(true));
+          });
         });
       });
     },
@@ -169,6 +196,7 @@ const TrackerStorage = (() => {
           unit: (options.unit || 'items').trim(),
           color: options.color || '#1a73e8',
           icon: options.icon || 'target',
+          dailyGoal: Math.max(1, parseInt(options.dailyGoal, 10) || 1),
           userEmail: userEmail || null,
           isDefault: false,
           createdAt: new Date().toISOString()
@@ -185,6 +213,65 @@ const TrackerStorage = (() => {
           });
         });
       });
+    },
+
+    async getActivityHistory(daysCount = 30, userEmailOverride) {
+      const days = Math.max(1, Math.min(90, parseInt(daysCount, 10) || 30));
+      const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
+      const [metrics, logs] = await Promise.all([
+        this.getMetrics(targetEmail),
+        this.getLogs({}, targetEmail)
+      ]);
+
+      const now = new Date();
+      const todayStr = getLocalDateStr(now);
+
+      const dailyMap = {};
+      logs.forEach(l => {
+        if (!dailyMap[l.date]) dailyMap[l.date] = { total: 0, byMetric: {} };
+        const cnt = l.count || 1;
+        dailyMap[l.date].total += cnt;
+        dailyMap[l.date].byMetric[l.metricId] = (dailyMap[l.date].byMetric[l.metricId] || 0) + cnt;
+      });
+
+      const historyDays = [];
+      let totalCount = 0;
+      let activeDaysCount = 0;
+      let bestDay = { date: todayStr, count: 0 };
+
+      for (let i = days - 1; i >= 0; i--) {
+        const dStr = addDays(todayStr, -i);
+        const dayData = dailyMap[dStr] || { total: 0, byMetric: {} };
+        const dayTotal = dayData.total;
+        totalCount += dayTotal;
+        if (dayTotal > 0) activeDaysCount++;
+        if (dayTotal > bestDay.count) {
+          bestDay = { date: dStr, count: dayTotal };
+        }
+
+        const dateParts = dStr.split('-');
+        const monthNum = parseInt(dateParts[1], 10);
+        const dayNum = parseInt(dateParts[2], 10);
+        const monthShort = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][monthNum - 1];
+
+        historyDays.push({
+          date: dStr,
+          label: `${monthShort} ${dayNum}`,
+          count: dayTotal,
+          byMetric: dayData.byMetric
+        });
+      }
+
+      const dailyAverage = days > 0 ? (totalCount / days).toFixed(1) : '0.0';
+
+      return {
+        days: historyDays,
+        totalCount,
+        dailyAverage: parseFloat(dailyAverage),
+        activeDaysCount,
+        bestDay,
+        metrics
+      };
     },
 
     async deleteMetric(id, userEmailOverride) {

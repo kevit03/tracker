@@ -246,15 +246,14 @@
       let topOffset = 26;
       if (headerEl && headerEl.offsetHeight > 0 && headerEl.offsetHeight < 60) {
         topOffset = Math.max(24, headerEl.offsetTop + headerEl.offsetHeight + 2);
-      }
-
-      const dateCounts = stats.dailyMap[dateStr] || {};
+      }      const dateCounts = stats.dailyMap[dateStr] || {};
       const stateKeyParts = [];
       metrics.forEach(m => {
         if (!activeVisibleMetrics.has(m.id)) return;
         const count = dateCounts[m.id] || 0;
         if (count > 0) {
-          stateKeyParts.push(m.id + ':' + count + ':' + m.color);
+          const isGoalMet = m.dailyGoal && count >= m.dailyGoal;
+          stateKeyParts.push(m.id + ':' + count + ':' + m.color + ':' + (isGoalMet ? '1' : '0'));
         }
       });
       const stateKey = stateKeyParts.join('|');
@@ -284,20 +283,28 @@
         const count = dateCounts[m.id] || 0;
         if (count <= 0) return;
 
+        const isGoalMet = m.dailyGoal && count >= m.dailyGoal;
         const badge = document.createElement('div');
-        badge.className = 'pt-badge';
-        badge.style.backgroundColor = m.color + '18';
-        badge.style.color = m.color;
-        badge.style.borderLeftColor = m.color;
+        badge.className = 'pt-badge' + (isGoalMet ? ' pt-goal-met' : '');
+        if (isGoalMet) {
+          badge.style.backgroundColor = m.color;
+          badge.style.color = '#ffffff';
+          badge.style.borderLeftColor = m.color;
+        } else {
+          badge.style.backgroundColor = m.color + '18';
+          badge.style.color = m.color;
+          badge.style.borderLeftColor = m.color;
+        }
 
-        const label = m.id === 'jobs'
+        const baseLabel = m.id === 'jobs'
           ? (count === 1 ? '1 Job Applied' : count + ' Jobs Applied')
           : (count + ' ' + m.name);
-        badge.title = label + ' on ' + dateStr + '. Click to view details.';
+        const label = isGoalMet ? baseLabel + ' (Goal Met)' : baseLabel;
+        badge.title = baseLabel + ' on ' + dateStr + ' (' + count + '/' + (m.dailyGoal || 1) + ' goal). Click to view details.';
 
         const dot = document.createElement('span');
         dot.className = 'pt-badge-dot';
-        dot.style.backgroundColor = m.color;
+        dot.style.backgroundColor = isGoalMet ? '#ffffff' : m.color;
 
         const text = document.createElement('span');
         text.className = 'pt-badge-text';
@@ -308,8 +315,7 @@
 
         badge.addEventListener('click', (e) => {
           e.stopPropagation();
-          e.preventDefault();
-          openDayModal(dateStr);
+          openDayModal(dateStr, false);
         });
 
         overlay.appendChild(badge);
@@ -384,6 +390,23 @@
               '<button id="pt-add-tracker-btn" style="background:none;border:none;color:#1a73e8;font-size:11px;cursor:pointer;font-weight:600;">+ Add</button>',
             '</div>',
             '<div class="pt-tracker-list" id="pt-tracker-list"></div>',
+          '</div>',
+
+          // 30-Day Activity
+          '<div class="pt-activity-section">',
+            '<button class="pt-activity-toggle" id="pt-activity-toggle">',
+              '<span>30-Day Activity</span>',
+              '<span id="pt-activity-arrow" style="font-size:10px;">\u25bc</span>',
+            '</button>',
+            '<div class="pt-activity-body pt-hidden" id="pt-activity-body">',
+              '<div class="pt-chart-container" id="pt-activity-bars"></div>',
+              '<div class="pt-activity-stats">',
+                '<div><div class="pt-act-stat-num" id="pt-act-total">0</div><div class="pt-act-stat-lbl">30D Total</div></div>',
+                '<div><div class="pt-act-stat-num" id="pt-act-avg">0.0</div><div class="pt-act-stat-lbl">Daily Avg</div></div>',
+                '<div><div class="pt-act-stat-num" id="pt-act-days">0</div><div class="pt-act-stat-lbl">Active Days</div></div>',
+                '<div><div class="pt-act-stat-num" id="pt-act-best">0</div><div class="pt-act-stat-lbl">Best Day</div></div>',
+              '</div>',
+            '</div>',
           '</div>',
 
           // Stats bar
@@ -488,6 +511,57 @@
         await refreshData();
       });
     }
+
+    const actToggle = document.getElementById('pt-activity-toggle');
+    const actBody = document.getElementById('pt-activity-body');
+    const actArrow = document.getElementById('pt-activity-arrow');
+    let isActOpen = false;
+    if (actToggle && actBody) {
+      actToggle.addEventListener('click', () => {
+        isActOpen = !isActOpen;
+        actBody.classList.toggle('pt-hidden', !isActOpen);
+        if (actArrow) actArrow.textContent = isActOpen ? '\u25b2' : '\u25bc';
+        if (isActOpen) updateActivityChart();
+      });
+    }
+  }
+
+  async function updateActivityChart() {
+    const barsContainer = document.getElementById('pt-activity-bars');
+    if (!barsContainer) return;
+    const history = await TrackerStorage.getActivityHistory(30);
+    const totalEl = document.getElementById('pt-act-total');
+    const avgEl = document.getElementById('pt-act-avg');
+    const daysEl = document.getElementById('pt-act-days');
+    const bestEl = document.getElementById('pt-act-best');
+
+    if (totalEl) totalEl.textContent = history.totalCount;
+    if (avgEl) avgEl.textContent = history.dailyAverage;
+    if (daysEl) daysEl.textContent = history.activeDaysCount;
+    if (bestEl) bestEl.textContent = history.bestDay.count;
+
+    barsContainer.innerHTML = '';
+    const maxVal = Math.max(4, ...history.days.map(d => d.count));
+    history.days.forEach(day => {
+      const col = document.createElement('div');
+      col.className = 'pt-bar-col';
+
+      const heightPct = Math.round((day.count / maxVal) * 100);
+      const bar = document.createElement('div');
+      bar.className = 'pt-bar' + (day.count > 0 ? ' has-activity' : '');
+      bar.style.height = (day.count > 0 ? Math.max(10, heightPct) : 4) + '%';
+
+      const tooltip = document.createElement('div');
+      tooltip.className = 'pt-bar-tooltip';
+      tooltip.textContent = day.label + ': ' + day.count;
+
+      col.appendChild(bar);
+      col.appendChild(tooltip);
+      col.addEventListener('click', () => {
+        openDayModal(day.date, false);
+      });
+      barsContainer.appendChild(col);
+    });
   }
 
   function updateDock() {
@@ -594,8 +668,25 @@
         label.style.color = '#3c4043';
         label.textContent = m.name;
 
+        const goalTag = document.createElement('span');
+        goalTag.className = 'pt-goal-tag';
+        goalTag.textContent = 'Goal: ' + (m.dailyGoal || 1);
+        goalTag.title = 'Click to edit daily goal';
+        goalTag.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const val = prompt('Set daily goal for ' + m.name + ':', m.dailyGoal || 1);
+          if (val !== null && val.trim() !== '') {
+            const num = parseInt(val.trim(), 10);
+            if (!isNaN(num) && num > 0) {
+              await TrackerStorage.setMetricGoal(m.id, num);
+              await refreshData();
+            }
+          }
+        });
+
         left.appendChild(cb);
         left.appendChild(label);
+        left.appendChild(goalTag);
 
         const right = document.createElement('div');
         right.className = 'pt-tracker-right';
@@ -643,6 +734,8 @@
         trackerList.appendChild(item);
       });
     }
+
+    updateActivityChart();
   }
 
   // ---------------------------------------------------------------

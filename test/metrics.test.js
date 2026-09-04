@@ -158,6 +158,34 @@ async function run() {
     uninstallMockChrome();
   }
 
+  // 5. Daily Goal Targets and Activity History
+  {
+    const { TrackerStorage } = getFreshStorage();
+
+    const metrics = await TrackerStorage.getMetrics();
+    const jobsMetric = metrics.find(m => m.id === 'jobs');
+    assert.strictEqual(jobsMetric.dailyGoal, 5, 'Jobs default goal must be 5');
+
+    // Update goal
+    await TrackerStorage.setMetricGoal('jobs', 10);
+    const updatedMetrics = await TrackerStorage.getMetrics();
+    const updatedJobs = updatedMetrics.find(m => m.id === 'jobs');
+    assert.strictEqual(updatedJobs.dailyGoal, 10, 'Jobs goal should be updated to 10');
+
+    // Add logs across today and previous days
+    await TrackerStorage.addLog({ metricId: 'jobs', count: 3 });
+    const history = await TrackerStorage.getActivityHistory(30);
+    assert.strictEqual(history.days.length, 30, 'History should return 30 days');
+    assert.strictEqual(history.totalCount, 3, 'Total count should be 3');
+    assert.strictEqual(history.activeDaysCount, 1, 'Active days count should be 1');
+    assert.ok(typeof history.dailyAverage === 'number', 'Daily average should be a number');
+
+    console.log('[PASS] Daily goal targets and activity history computation');
+    delete global.TrackerAuth;
+    delete global.TrackerStorage;
+    uninstallMockChrome();
+  }
+
   console.log('--- test/metrics.test.js COMPLETED SUCCESSFULLY ---\n');
 }
 
