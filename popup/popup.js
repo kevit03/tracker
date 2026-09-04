@@ -222,7 +222,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function renderActivityChart() {
     const barsContainer = el('activity-bars');
     if (!barsContainer) return;
-    const history = await TrackerStorage.getActivityHistory(30);
+    const current = metrics.find(m => m.id === activeMetricId);
+    const color = current ? current.color : '#1a73e8';
+
+    const titleEl = el('activity-title');
+    if (titleEl && current) {
+      titleEl.textContent = '30-Day ' + current.name + ' Activity';
+    }
+
+    const history = await TrackerStorage.getActivityHistory(30, activeMetricId);
 
     const totalEl = el('pop-act-total');
     const avgEl = el('pop-act-avg');
@@ -236,8 +244,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     barsContainer.innerHTML = '';
     const maxVal = Math.max(4, ...history.days.map(d => d.count));
-    const current = metrics.find(m => m.id === activeMetricId);
-    const color = current ? current.color : '#1a73e8';
 
     history.days.forEach(day => {
       const col = document.createElement('div');

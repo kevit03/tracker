@@ -399,6 +399,7 @@
               '<span id="pt-activity-arrow" style="font-size:10px;">\u25bc</span>',
             '</button>',
             '<div class="pt-activity-body pt-hidden" id="pt-activity-body">',
+              '<div class="pt-activity-tabs" id="pt-activity-tabs" style="display:flex;gap:4px;margin-bottom:6px;overflow-x:auto;"></div>',
               '<div class="pt-chart-container" id="pt-activity-bars"></div>',
               '<div class="pt-activity-stats">',
                 '<div><div class="pt-act-stat-num" id="pt-act-total">0</div><div class="pt-act-stat-lbl">30D Total</div></div>',
@@ -526,10 +527,44 @@
     }
   }
 
+  let dockChartMetricId = 'jobs';
+
   async function updateActivityChart() {
     const barsContainer = document.getElementById('pt-activity-bars');
+    const tabsContainer = document.getElementById('pt-activity-tabs');
     if (!barsContainer) return;
-    const history = await TrackerStorage.getActivityHistory(30);
+
+    if (!metrics.some(m => m.id === dockChartMetricId)) {
+      dockChartMetricId = metrics[0] ? metrics[0].id : 'jobs';
+    }
+
+    const current = metrics.find(m => m.id === dockChartMetricId) || { color: '#1a73e8', name: 'Jobs' };
+
+    if (tabsContainer) {
+      tabsContainer.innerHTML = '';
+      metrics.forEach(m => {
+        const tab = document.createElement('button');
+        tab.className = 'pt-act-tab';
+        const isSelected = m.id === dockChartMetricId;
+        tab.style.padding = '2px 8px';
+        tab.style.fontSize = '10px';
+        tab.style.fontWeight = '600';
+        tab.style.borderRadius = '10px';
+        tab.style.border = '1px solid ' + (isSelected ? m.color : '#dadce0');
+        tab.style.background = isSelected ? m.color : '#fff';
+        tab.style.color = isSelected ? '#fff' : '#5f6368';
+        tab.style.cursor = 'pointer';
+        tab.textContent = m.name;
+        tab.addEventListener('click', (e) => {
+          e.stopPropagation();
+          dockChartMetricId = m.id;
+          updateActivityChart();
+        });
+        tabsContainer.appendChild(tab);
+      });
+    }
+
+    const history = await TrackerStorage.getActivityHistory(30, dockChartMetricId);
     const totalEl = document.getElementById('pt-act-total');
     const avgEl = document.getElementById('pt-act-avg');
     const daysEl = document.getElementById('pt-act-days');
@@ -550,6 +585,9 @@
       const bar = document.createElement('div');
       bar.className = 'pt-bar' + (day.count > 0 ? ' has-activity' : '');
       bar.style.height = (day.count > 0 ? Math.max(10, heightPct) : 4) + '%';
+      if (day.count > 0) {
+        bar.style.backgroundColor = current.color;
+      }
 
       const tooltip = document.createElement('div');
       tooltip.className = 'pt-bar-tooltip';

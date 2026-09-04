@@ -12,25 +12,7 @@
       "128": "icons/icon128.png"
     }
   },
-  "background": {
-    "service_worker": "background/background.js"
-  },
-  "commands": {
-    "quick-add-job": {
-      "suggested_key": {
-        "default": "Alt+Shift+J",
-        "mac": "Command+Shift+J"
-      },
-      "description": "Log +1 Job Application"
-    },
-    "quick-add-leetcode": {
-      "suggested_key": {
-        "default": "Alt+Shift+L",
-        "mac": "Command+Shift+L"
-      },
-      "description": "Log +1 LeetCode Problem"
-    }
-  },
+
   "content_scripts": [
     {
       "matches": [

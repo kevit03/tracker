@@ -215,12 +215,21 @@ const TrackerStorage = (() => {
       });
     },
 
-    async getActivityHistory(daysCount = 30, userEmailOverride) {
+    async getActivityHistory(daysCount = 30, metricId = null, userEmailOverride) {
       const days = Math.max(1, Math.min(90, parseInt(daysCount, 10) || 30));
-      const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
+      let targetMetricId = null;
+      let targetEmailOverride = userEmailOverride;
+      if (typeof metricId === 'string' && metricId.includes('@')) {
+        targetEmailOverride = metricId;
+        targetMetricId = null;
+      } else {
+        targetMetricId = metricId;
+      }
+
+      const targetEmail = normalizeEmail(targetEmailOverride !== undefined ? targetEmailOverride : await getCurrentUserEmail());
       const [metrics, logs] = await Promise.all([
         this.getMetrics(targetEmail),
-        this.getLogs({}, targetEmail)
+        this.getLogs(targetMetricId ? { metricId: targetMetricId } : {}, targetEmail)
       ]);
 
       const now = new Date();
@@ -242,7 +251,7 @@ const TrackerStorage = (() => {
       for (let i = days - 1; i >= 0; i--) {
         const dStr = addDays(todayStr, -i);
         const dayData = dailyMap[dStr] || { total: 0, byMetric: {} };
-        const dayTotal = dayData.total;
+        const dayTotal = targetMetricId ? (dayData.byMetric[targetMetricId] || 0) : dayData.total;
         totalCount += dayTotal;
         if (dayTotal > 0) activeDaysCount++;
         if (dayTotal > bestDay.count) {
