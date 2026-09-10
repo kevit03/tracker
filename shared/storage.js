@@ -4,8 +4,32 @@ const TrackerStorage = (() => {
     LOGS: 'logs',
     METRICS: 'metrics',
     AUTH: 'pt_auth_user',
-    VISIBLE_METRICS: 'pt_visible_metrics'
+    VISIBLE_METRICS: 'pt_visible_metrics',
+    THEME: 'pt_theme'
   };
+
+  function formatSecondsToMMSS(totalSeconds) {
+    const s = Math.max(0, parseInt(totalSeconds, 10) || 0);
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  function parseStringToSeconds(str) {
+    if (!str || typeof str !== 'string') return 0;
+    const trimmed = str.trim();
+    if (/^\d+$/.test(trimmed)) {
+      const n = parseInt(trimmed, 10);
+      return n <= 300 ? n * 60 : n;
+    }
+    const parts = trimmed.split(':').map(p => parseInt(p, 10) || 0);
+    if (parts.length === 2) {
+      return parts[0] * 60 + parts[1];
+    } else if (parts.length === 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    }
+    return 0;
+  }
 
   const DEFAULT_METRICS = [
     {
@@ -549,10 +573,31 @@ const TrackerStorage = (() => {
       };
     },
 
+    formatSecondsToMMSS,
+    parseStringToSeconds,
+
+    async getTheme() {
+      return new Promise(resolve => {
+        getStorageArea().get([STORAGE_KEYS.THEME], result => {
+          const theme = result && result[STORAGE_KEYS.THEME];
+          resolve(theme === 'dark' ? 'dark' : 'light');
+        });
+      });
+    },
+
+    async setTheme(theme) {
+      const cleanTheme = theme === 'dark' ? 'dark' : 'light';
+      return enqueueWrite(async () => {
+        return new Promise(resolve => {
+          getStorageArea().set({ [STORAGE_KEYS.THEME]: cleanTheme }, () => resolve(cleanTheme));
+        });
+      });
+    },
+
     onChanged(cb) {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {
-          if (area === 'local' && (changes.logs || changes.metrics || changes.pt_auth_user || changes.pt_visible_metrics)) {
+          if (area === 'local' && (changes.logs || changes.metrics || changes.pt_auth_user || changes.pt_visible_metrics || changes.pt_theme)) {
             cb(changes);
           }
         });

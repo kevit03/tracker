@@ -228,6 +228,52 @@ async function run() {
     uninstallMockChrome();
   }
 
+  // 6. Theme Storage & Time Helpers (LeetCode Timer)
+  {
+    const { TrackerStorage } = getFreshStorage();
+
+    // Default theme is 'light'
+    const defaultTheme = await TrackerStorage.getTheme();
+    assert.strictEqual(defaultTheme, 'light');
+
+    // Setting theme to 'dark'
+    const darkTheme = await TrackerStorage.setTheme('dark');
+    assert.strictEqual(darkTheme, 'dark');
+    const readDark = await TrackerStorage.getTheme();
+    assert.strictEqual(readDark, 'dark');
+
+    // Sanitization: invalid theme falls back to 'light'
+    const fallbackTheme = await TrackerStorage.setTheme('unknown_theme');
+    assert.strictEqual(fallbackTheme, 'light');
+    const readFallback = await TrackerStorage.getTheme();
+    assert.strictEqual(readFallback, 'light');
+
+    // Time formatting (formatSecondsToMMSS)
+    assert.strictEqual(TrackerStorage.formatSecondsToMMSS(0), '00:00');
+    assert.strictEqual(TrackerStorage.formatSecondsToMMSS(59), '00:59');
+    assert.strictEqual(TrackerStorage.formatSecondsToMMSS(60), '01:00');
+    assert.strictEqual(TrackerStorage.formatSecondsToMMSS(150), '02:30');
+    assert.strictEqual(TrackerStorage.formatSecondsToMMSS(3600), '60:00');
+    assert.strictEqual(TrackerStorage.formatSecondsToMMSS(-10), '00:00');
+    assert.strictEqual(TrackerStorage.formatSecondsToMMSS(null), '00:00');
+
+    // Time parsing (parseStringToSeconds)
+    assert.strictEqual(TrackerStorage.parseStringToSeconds('25:00'), 1500);
+    assert.strictEqual(TrackerStorage.parseStringToSeconds('05:30'), 330);
+    assert.strictEqual(TrackerStorage.parseStringToSeconds('1:15:00'), 4500);
+    assert.strictEqual(TrackerStorage.parseStringToSeconds('25'), 1500);
+    assert.strictEqual(TrackerStorage.parseStringToSeconds('15'), 900);
+    assert.strictEqual(TrackerStorage.parseStringToSeconds('600'), 600);
+    assert.strictEqual(TrackerStorage.parseStringToSeconds('abc'), 0);
+    assert.strictEqual(TrackerStorage.parseStringToSeconds(''), 0);
+    assert.strictEqual(TrackerStorage.parseStringToSeconds(null), 0);
+
+    console.log('[PASS] Theme storage persistence and LeetCode time helpers');
+    delete global.TrackerAuth;
+    delete global.TrackerStorage;
+    uninstallMockChrome();
+  }
+
   console.log('--- test/storage.test.js COMPLETED SUCCESSFULLY ---\n');
 }
 

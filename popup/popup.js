@@ -12,6 +12,106 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   el('current-date-text').textContent = formatDateHeader();
 
+  function applyTheme(theme) {
+    const isDark = theme === 'dark';
+    document.body.classList.toggle('pt-dark', isDark);
+    const btn = el('theme-toggle-btn');
+    if (btn) btn.textContent = isDark ? 'Light' : 'Dark';
+  }
+
+  const initialTheme = await TrackerStorage.getTheme();
+  applyTheme(initialTheme);
+
+  el('theme-toggle-btn').addEventListener('click', async () => {
+    const isDark = document.body.classList.contains('pt-dark');
+    const nextTheme = isDark ? 'light' : 'dark';
+    applyTheme(nextTheme);
+    await TrackerStorage.setTheme(nextTheme);
+    notifyCalendarTabs();
+  });
+
+  // LeetCode Timer State
+  let timerSeconds = 0;
+  let timerInterval = null;
+  let isTimerRunning = false;
+
+  const timerWidget = el('leetcode-timer-widget');
+  const timerInput = el('timer-input');
+  const timerToggleBtn = el('timer-toggle-btn');
+  const timerResetBtn = el('timer-reset-btn');
+
+  function updateTimerInputDisplay() {
+    if (document.activeElement !== timerInput) {
+      timerInput.value = TrackerStorage.formatSecondsToMMSS(timerSeconds);
+    }
+  }
+
+  function startTimer() {
+    if (isTimerRunning) return;
+    isTimerRunning = true;
+    timerToggleBtn.textContent = 'Pause';
+    timerToggleBtn.classList.add('running');
+    timerInterval = setInterval(() => {
+      timerSeconds++;
+      updateTimerInputDisplay();
+    }, 1000);
+  }
+
+  function pauseTimer() {
+    isTimerRunning = false;
+    timerToggleBtn.textContent = 'Start';
+    timerToggleBtn.classList.remove('running');
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+  }
+
+  function resetTimer() {
+    pauseTimer();
+    timerSeconds = 0;
+    updateTimerInputDisplay();
+  }
+
+  function formatSolveTimeString(sec) {
+    if (sec <= 0) return '';
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m > 0 && s > 0) return `Solve time: ${m}m ${s}s`;
+    if (m > 0) return `Solve time: ${m}m`;
+    return `Solve time: ${s}s`;
+  }
+
+  timerToggleBtn.addEventListener('click', () => {
+    if (isTimerRunning) pauseTimer(); else startTimer();
+  });
+
+  timerResetBtn.addEventListener('click', () => {
+    resetTimer();
+  });
+
+  timerInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      timerInput.blur();
+    }
+  });
+
+  timerInput.addEventListener('blur', () => {
+    const parsed = TrackerStorage.parseStringToSeconds(timerInput.value);
+    timerSeconds = parsed;
+    updateTimerInputDisplay();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && activeMetricId === 'leetcode') {
+      const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+      if (activeTag !== 'input' && activeTag !== 'textarea') {
+        e.preventDefault();
+        if (isTimerRunning) pauseTimer(); else startTimer();
+      }
+    }
+  });
+
   async function updateAuthUI() {
     currentUser = await TrackerAuth.getCurrentUser();
     const info = el('account-info');
@@ -41,6 +141,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const current = metrics.find(m => m.id === activeMetricId) || metrics[0];
     if (!current) return;
     activeMetricId = current.id;
+
+    // Show/hide timer widget
+    if (timerWidget) {
+      if (activeMetricId === 'leetcode') {
+        timerWidget.classList.remove('hidden');
+        updateTimerInputDisplay();
+      } else {
+        timerWidget.classList.add('hidden');
+      }
+    }
 
     // Tabs
     const tabsContainer = el('metric-tabs');
@@ -155,7 +265,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   el('quick-add-btn').addEventListener('click', async () => {
     el('metric-count').classList.add('bump');
     setTimeout(() => el('metric-count').classList.remove('bump'), 150);
-    await TrackerStorage.addLog({ metricId: activeMetricId, count: 1 });
+
+    let notes = undefined;
+    if (activeMetricId === 'leetcode' && timerSeconds > 0) {
+      notes = formatSolveTimeString(timerSeconds);
+      resetTimer();
+    }
+
+    await TrackerStorage.addLog({
+      metricId: activeMetricId,
+      count: 1,
+      notes: notes
+    });
     notifyCalendarTabs();
     await loadData();
   });
@@ -176,12 +297,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Details submit
   el('details-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    let notes = el('detail-notes').value ? el('detail-notes').value.trim() : '';
+    if (activeMetricId === 'leetcode' && timerSeconds > 0) {
+      const solveTimeStr = formatSolveTimeString(timerSeconds);
+      notes = notes ? `${notes} (${solveTimeStr})` : solveTimeStr;
+      resetTimer();
+    }
+
     await TrackerStorage.addLog({
       metricId: activeMetricId,
       count: 1,
       company: el('detail-company').value,
       role: el('detail-role').value,
-      notes: el('detail-notes').value
+      notes: notes
     });
     notifyCalendarTabs();
     el('detail-company').value = '';

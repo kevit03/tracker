@@ -13,9 +13,12 @@
         <div class="brand-dot"></div>
         <span class="brand-title">PulseTracker</span>
       </div>
-      <span class="streak-pill" id="streak-pill">
-        <span id="streak-count">0</span>-day streak
-      </span>
+      <div class="header-right">
+        <button id="theme-toggle-btn" class="theme-toggle-btn" type="button" title="Toggle theme">Dark</button>
+        <span class="streak-pill" id="streak-pill">
+          <span id="streak-count">0</span>-day streak
+        </span>
+      </div>
     </header>
 
     <!-- Google Account Bar -->
@@ -47,6 +50,23 @@
           <span id="quick-add-label">+1 Applied</span>
         </button>
         <button id="undo-btn" class="btn-secondary" title="Undo">-1</button>
+      </div>
+    </div>
+
+    <!-- LeetCode Solve Timer (active on LeetCode tab) -->
+    <div id="leetcode-timer-widget" class="timer-widget hidden">
+      <div class="timer-header">
+        <span class="timer-title">Problem Solve Timer</span>
+        <span class="timer-hint">Click time to type</span>
+      </div>
+      <div class="timer-controls-row">
+        <div class="timer-input-wrap">
+          <input type="text" id="timer-input" class="timer-input" value="00:00" placeholder="00:00" spellcheck="false" autocomplete="off" />
+        </div>
+        <div class="timer-btn-group">
+          <button type="button" id="timer-toggle-btn" class="timer-btn timer-btn-start">Start</button>
+          <button type="button" id="timer-reset-btn" class="timer-btn timer-btn-reset">Reset</button>
+        </div>
       </div>
     </div>
 

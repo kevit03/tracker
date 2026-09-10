@@ -760,3 +760,455 @@ aside .pt-quick-add-cell {
 .pt-hidden {
   display: none !important;
 }
+
+/* ===== Dock Theme Toggle Button ===== */
+.pt-dock-theme-btn {
+  background: #f1f3f4;
+  border: 1px solid #dadce0;
+  border-radius: 12px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #3c4043;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.12s;
+}
+
+.pt-dock-theme-btn:hover {
+  background: #e8eaed;
+  color: #202124;
+}
+
+/* ===== LeetCode Timer Widget (Dock & Modal) ===== */
+.pt-timer-widget {
+  background: #f8fafd;
+  border: 1px solid #d2e3fc;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pt-timer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pt-timer-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #1a73e8;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.pt-timer-hint {
+  font-size: 10px;
+  color: #5f6368;
+  font-style: italic;
+}
+
+.pt-timer-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pt-timer-input-wrap {
+  flex: 1;
+}
+
+.pt-timer-input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+  padding: 4px 6px;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  background: #fff;
+  color: #202124;
+  outline: none;
+  transition: border-color 0.12s;
+}
+
+.pt-timer-input:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+}
+
+.pt-timer-btn-group {
+  display: flex;
+  gap: 6px;
+}
+
+.pt-timer-btn {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.12s;
+  border: 1px solid transparent;
+}
+
+.pt-timer-btn-start {
+  background: #1a73e8;
+  color: #fff;
+  border-color: #1a73e8;
+}
+
+.pt-timer-btn-start:hover {
+  background: #1557b0;
+}
+
+.pt-timer-btn-start.running {
+  background: #e37400;
+  border-color: #e37400;
+}
+
+.pt-timer-btn-start.running:hover {
+  background: #b05a00;
+}
+
+.pt-timer-btn-reset {
+  background: #fff;
+  color: #5f6368;
+  border: 1px solid #dadce0;
+}
+
+.pt-timer-btn-reset:hover {
+  background: #f1f3f4;
+  color: #202124;
+}
+
+/* ===== Dark Mode Styles ===== */
+#pt-floating-dock.pt-dark .pt-dock-toggle {
+  background: #2d2f31;
+  color: #e8eaed;
+  border-color: #5f6368;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+#pt-floating-dock.pt-dark .pt-dock-toggle:hover {
+  background: #35383b;
+}
+
+#pt-floating-dock.pt-dark .pt-streak-pill {
+  background: #3c4043;
+  color: #e8eaed;
+}
+
+#pt-floating-dock.pt-dark .pt-dock-panel {
+  background: #202124;
+  border-color: #5f6368;
+  color: #e8eaed;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+}
+
+#pt-floating-dock.pt-dark .pt-panel-header {
+  border-bottom-color: #3c4043;
+}
+
+#pt-floating-dock.pt-dark .pt-panel-title {
+  color: #e8eaed;
+}
+
+#pt-floating-dock.pt-dark .pt-dock-theme-btn {
+  background: #3c4043;
+  border-color: #5f6368;
+  color: #e8eaed;
+}
+
+#pt-floating-dock.pt-dark .pt-dock-theme-btn:hover {
+  background: #4a4d51;
+  color: #fff;
+}
+
+#pt-floating-dock.pt-dark .pt-close-btn {
+  color: #9aa0a6;
+}
+
+#pt-floating-dock.pt-dark .pt-close-btn:hover {
+  background: #3c4043;
+  color: #e8eaed;
+}
+
+#pt-floating-dock.pt-dark #pt-dock-account {
+  background: #282a2d;
+  border-color: #3c4043;
+}
+
+#pt-floating-dock.pt-dark #pt-dock-account-email {
+  color: #e8eaed;
+}
+
+#pt-floating-dock.pt-dark #pt-dock-signin {
+  background: #2d2f31;
+  border-color: #5f6368;
+  color: #e8eaed;
+}
+
+#pt-floating-dock.pt-dark #pt-dock-signin:hover {
+  background: #35383b;
+}
+
+#pt-floating-dock.pt-dark .pt-hero-card {
+  background: #282a2d;
+  border-color: #3c4043;
+}
+
+#pt-floating-dock.pt-dark .pt-hero-label {
+  color: #9aa0a6;
+}
+
+#pt-floating-dock.pt-dark .pt-btn-secondary {
+  background: #2d2f31;
+  color: #e8eaed;
+  border-color: #5f6368;
+}
+
+#pt-floating-dock.pt-dark .pt-btn-secondary:hover {
+  background: #3c4043;
+}
+
+#pt-floating-dock.pt-dark .pt-btn-metric {
+  background: #2d2f31;
+  border-color: #5f6368;
+}
+
+#pt-floating-dock.pt-dark .pt-btn-metric:hover {
+  background: #35383b;
+}
+
+#pt-floating-dock.pt-dark .pt-timer-widget {
+  background: #282a2d;
+  border-color: #3c4043;
+}
+
+#pt-floating-dock.pt-dark .pt-timer-title {
+  color: #8ab4f8;
+}
+
+#pt-floating-dock.pt-dark .pt-timer-hint {
+  color: #9aa0a6;
+}
+
+#pt-floating-dock.pt-dark .pt-timer-input {
+  background: #202124;
+  border-color: #5f6368;
+  color: #e8eaed;
+}
+
+#pt-floating-dock.pt-dark .pt-timer-input:focus {
+  border-color: #8ab4f8;
+  box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.2);
+}
+
+#pt-floating-dock.pt-dark .pt-timer-btn-reset {
+  background: #2d2f31;
+  border-color: #5f6368;
+  color: #e8eaed;
+}
+
+#pt-floating-dock.pt-dark .pt-timer-btn-reset:hover {
+  background: #3c4043;
+}
+
+#pt-floating-dock.pt-dark .pt-details-toggle {
+  color: #8ab4f8;
+}
+
+#pt-floating-dock.pt-dark .pt-details-form {
+  background: #282a2d;
+  border-color: #3c4043;
+}
+
+#pt-floating-dock.pt-dark .pt-details-form input,
+#pt-floating-dock.pt-dark .pt-details-form select {
+  background: #202124;
+  color: #e8eaed;
+  border-color: #5f6368;
+}
+
+#pt-floating-dock.pt-dark .pt-details-form input:focus,
+#pt-floating-dock.pt-dark .pt-details-form select:focus {
+  border-color: #8ab4f8;
+}
+
+#pt-floating-dock.pt-dark .pt-section-title {
+  color: #9aa0a6;
+}
+
+#pt-floating-dock.pt-dark #pt-add-tracker-btn {
+  color: #8ab4f8;
+}
+
+#pt-floating-dock.pt-dark .pt-tracker-item:hover {
+  background: #282a2d;
+}
+
+#pt-floating-dock.pt-dark .pt-tracker-item span {
+  color: #e8eaed !important;
+}
+
+#pt-floating-dock.pt-dark .pt-goal-tag {
+  background: #3c4043;
+  color: #bdc1c6 !important;
+}
+
+#pt-floating-dock.pt-dark .pt-goal-tag:hover {
+  background: #1a73e8;
+  color: #fff !important;
+}
+
+#pt-floating-dock.pt-dark .pt-activity-section {
+  border-top-color: #3c4043;
+}
+
+#pt-floating-dock.pt-dark .pt-activity-toggle {
+  color: #8ab4f8;
+}
+
+#pt-floating-dock.pt-dark .pt-act-tab:not([style*="background: rgb"]) {
+  background: #2d2f31 !important;
+  color: #bdc1c6 !important;
+  border-color: #5f6368 !important;
+}
+
+#pt-floating-dock.pt-dark .pt-chart-container {
+  background: #282a2d;
+  border-color: #3c4043;
+}
+
+#pt-floating-dock.pt-dark .pt-bar {
+  background: #3c4043;
+}
+
+#pt-floating-dock.pt-dark .pt-activity-stats {
+  background: #282a2d;
+  border-color: #3c4043;
+}
+
+#pt-floating-dock.pt-dark .pt-act-stat-num {
+  color: #e8eaed;
+}
+
+#pt-floating-dock.pt-dark .pt-act-stat-lbl {
+  color: #9aa0a6;
+}
+
+#pt-floating-dock.pt-dark .pt-dock-stats-bar {
+  background: #282a2d !important;
+  border-color: #3c4043 !important;
+}
+
+#pt-floating-dock.pt-dark .pt-dock-stats-bar .pt-stat-val {
+  color: #e8eaed !important;
+}
+
+#pt-floating-dock.pt-dark .pt-dock-stats-bar .pt-stat-lbl {
+  color: #9aa0a6 !important;
+}
+
+#pt-floating-dock.pt-dark .pt-dock-stats-bar .pt-stat-divider {
+  background: #3c4043 !important;
+}
+
+/* Modals Dark Mode */
+.pt-modal-dialog.pt-dark {
+  background: #202124;
+  border: 1px solid #5f6368;
+  color: #e8eaed;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.55);
+}
+
+.pt-modal-dialog.pt-dark .pt-modal-header {
+  border-bottom-color: #3c4043;
+}
+
+.pt-modal-dialog.pt-dark .pt-modal-header-title {
+  color: #e8eaed;
+}
+
+.pt-modal-dialog.pt-dark .pt-modal-header-sub {
+  color: #9aa0a6;
+}
+
+.pt-modal-dialog.pt-dark .pt-close-btn {
+  color: #9aa0a6;
+}
+
+.pt-modal-dialog.pt-dark .pt-close-btn:hover {
+  background: #3c4043;
+  color: #e8eaed;
+}
+
+.pt-modal-dialog.pt-dark .pt-entry-item {
+  border-color: #3c4043;
+  background: #282a2d;
+}
+
+.pt-modal-dialog.pt-dark .pt-entry-main {
+  color: #e8eaed;
+}
+
+.pt-modal-dialog.pt-dark .pt-entry-sub {
+  color: #9aa0a6;
+}
+
+.pt-modal-dialog.pt-dark .pt-entry-meta {
+  color: #80868b;
+}
+
+.pt-modal-dialog.pt-dark .pt-delete-entry {
+  color: #80868b;
+}
+
+.pt-modal-dialog.pt-dark .pt-delete-entry:hover {
+  color: #f28b82;
+  background: rgba(242, 139, 130, 0.15);
+}
+
+.pt-modal-dialog.pt-dark .pt-empty-state {
+  color: #9aa0a6;
+}
+
+.pt-modal-dialog.pt-dark .pt-modal-form {
+  border-top-color: #3c4043;
+}
+
+.pt-modal-dialog.pt-dark .pt-modal-form label {
+  color: #9aa0a6;
+}
+
+.pt-modal-dialog.pt-dark .pt-modal-form input,
+.pt-modal-dialog.pt-dark .pt-modal-form select {
+  background: #282a2d;
+  color: #e8eaed;
+  border-color: #5f6368;
+}
+
+.pt-modal-dialog.pt-dark .pt-modal-form input:focus,
+.pt-modal-dialog.pt-dark .pt-modal-form select:focus {
+  border-color: #8ab4f8;
+}
+
+.pt-modal-dialog.pt-dark .pt-btn-secondary {
+  background: #2d2f31;
+  color: #e8eaed;
+  border-color: #5f6368;
+}
+
+.pt-modal-dialog.pt-dark .pt-btn-secondary:hover {
+  background: #3c4043;
+}
+
+.pt-modal-dialog.pt-dark .pt-color-btn.pt-selected {
+  border-color: #fff;
+}

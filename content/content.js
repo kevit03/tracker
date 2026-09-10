@@ -7,6 +7,76 @@
   let activeVisibleMetrics = new Set(['jobs', 'leetcode']);
   let isPanelOpen = false;
   let isDetailFormOpen = false;
+  let currentTheme = 'light';
+
+  // LeetCode Dock Timer State
+  let dockTimerSeconds = 0;
+  let dockTimerInterval = null;
+  let isDockTimerRunning = false;
+
+  function applyTheme(theme) {
+    currentTheme = theme === 'dark' ? 'dark' : 'light';
+    const dock = document.getElementById('pt-floating-dock');
+    if (dock) {
+      dock.classList.toggle('pt-dark', currentTheme === 'dark');
+    }
+    const themeBtn = document.getElementById('pt-dock-theme-btn');
+    if (themeBtn) {
+      themeBtn.textContent = currentTheme === 'dark' ? 'Light' : 'Dark';
+    }
+    document.querySelectorAll('.pt-modal-dialog').forEach(dlg => {
+      dlg.classList.toggle('pt-dark', currentTheme === 'dark');
+    });
+  }
+
+  function updateDockTimerInputDisplay() {
+    const inp = document.getElementById('pt-dock-timer-input');
+    if (inp && document.activeElement !== inp) {
+      inp.value = TrackerStorage.formatSecondsToMMSS(dockTimerSeconds);
+    }
+  }
+
+  function startDockTimer() {
+    if (isDockTimerRunning) return;
+    isDockTimerRunning = true;
+    const btn = document.getElementById('pt-dock-timer-toggle');
+    if (btn) {
+      btn.textContent = 'Pause';
+      btn.classList.add('running');
+    }
+    dockTimerInterval = setInterval(() => {
+      dockTimerSeconds++;
+      updateDockTimerInputDisplay();
+    }, 1000);
+  }
+
+  function pauseDockTimer() {
+    isDockTimerRunning = false;
+    const btn = document.getElementById('pt-dock-timer-toggle');
+    if (btn) {
+      btn.textContent = 'Start';
+      btn.classList.remove('running');
+    }
+    if (dockTimerInterval) {
+      clearInterval(dockTimerInterval);
+      dockTimerInterval = null;
+    }
+  }
+
+  function resetDockTimer() {
+    pauseDockTimer();
+    dockTimerSeconds = 0;
+    updateDockTimerInputDisplay();
+  }
+
+  function formatSolveTimeString(sec) {
+    if (sec <= 0) return '';
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m > 0 && s > 0) return 'Solve time: ' + m + 'm ' + s + 's';
+    if (m > 0) return 'Solve time: ' + m + 'm';
+    return 'Solve time: ' + s + 's';
+  }
 
   // ---------------------------------------------------------------
   // Helpers
@@ -344,7 +414,10 @@
       '<div class="pt-dock-panel pt-hidden" id="pt-dock-panel">',
         '<div class="pt-panel-header">',
           '<span class="pt-panel-title">Application Tracker</span>',
-          '<button class="pt-close-btn" id="pt-dock-close">&times;</button>',
+          '<div style="display:flex;align-items:center;gap:6px;">',
+            '<button type="button" id="pt-dock-theme-btn" class="pt-dock-theme-btn" title="Toggle theme">Dark</button>',
+            '<button class="pt-close-btn" id="pt-dock-close">&times;</button>',
+          '</div>',
         '</div>',
         '<div class="pt-panel-body">',
 
@@ -365,6 +438,23 @@
             '<div class="pt-action-row">',
               '<button class="pt-btn-primary" id="pt-quick-add-job">+1 Job Applied</button>',
               '<button class="pt-btn-secondary" id="pt-undo-job">-1</button>',
+            '</div>',
+          '</div>',
+
+          // LeetCode Solve Timer (dock)
+          '<div class="pt-timer-widget pt-hidden" id="pt-dock-timer-widget">',
+            '<div class="pt-timer-header">',
+              '<span class="pt-timer-title">LeetCode Solve Timer</span>',
+              '<span class="pt-timer-hint">Click time to edit</span>',
+            '</div>',
+            '<div class="pt-timer-controls-row">',
+              '<div class="pt-timer-input-wrap">',
+                '<input type="text" id="pt-dock-timer-input" class="pt-timer-input" value="00:00" placeholder="00:00" spellcheck="false" autocomplete="off" />',
+              '</div>',
+              '<div class="pt-timer-btn-group">',
+                '<button type="button" id="pt-dock-timer-toggle" class="pt-timer-btn pt-timer-btn-start">Start</button>',
+                '<button type="button" id="pt-dock-timer-reset" class="pt-timer-btn pt-timer-btn-reset">Reset</button>',
+              '</div>',
             '</div>',
           '</div>',
 
@@ -411,20 +501,20 @@
           '</div>',
 
           // Stats bar
-          '<div style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:6px;padding:8px;font-size:11px;display:flex;justify-content:space-around;">',
+          '<div class="pt-dock-stats-bar" style="background:#f8f9fa;border:1px solid #e8eaed;border-radius:6px;padding:8px;font-size:11px;display:flex;justify-content:space-around;">',
             '<div style="text-align:center;">',
-              '<div style="font-size:14px;font-weight:bold;color:#202124;" id="pt-stat-week">0</div>',
-              '<div style="color:#5f6368;text-transform:uppercase;font-size:9px;">This Week</div>',
+              '<div class="pt-stat-val" style="font-size:14px;font-weight:bold;color:#202124;" id="pt-stat-week">0</div>',
+              '<div class="pt-stat-lbl" style="color:#5f6368;text-transform:uppercase;font-size:9px;">This Week</div>',
             '</div>',
-            '<div style="width:1px;background:#dadce0;"></div>',
+            '<div class="pt-stat-divider" style="width:1px;background:#dadce0;"></div>',
             '<div style="text-align:center;">',
-              '<div style="font-size:14px;font-weight:bold;color:#202124;" id="pt-stat-month">0</div>',
-              '<div style="color:#5f6368;text-transform:uppercase;font-size:9px;">This Month</div>',
+              '<div class="pt-stat-val" style="font-size:14px;font-weight:bold;color:#202124;" id="pt-stat-month">0</div>',
+              '<div class="pt-stat-lbl" style="color:#5f6368;text-transform:uppercase;font-size:9px;">This Month</div>',
             '</div>',
-            '<div style="width:1px;background:#dadce0;"></div>',
+            '<div class="pt-stat-divider" style="width:1px;background:#dadce0;"></div>',
             '<div style="text-align:center;">',
-              '<div style="font-size:14px;font-weight:bold;color:#202124;" id="pt-stat-total">0</div>',
-              '<div style="color:#5f6368;text-transform:uppercase;font-size:9px;">Total</div>',
+              '<div class="pt-stat-val" style="font-size:14px;font-weight:bold;color:#202124;" id="pt-stat-total">0</div>',
+              '<div class="pt-stat-lbl" style="color:#5f6368;text-transform:uppercase;font-size:9px;">Total</div>',
             '</div>',
           '</div>',
 
@@ -440,12 +530,60 @@
     const toggleBtn = document.getElementById('pt-dock-toggle');
     const panel = document.getElementById('pt-dock-panel');
     const closeBtn = document.getElementById('pt-dock-close');
+    const themeBtn = document.getElementById('pt-dock-theme-btn');
     const quickAddJob = document.getElementById('pt-quick-add-job');
     const undoJob = document.getElementById('pt-undo-job');
     const detailsToggle = document.getElementById('pt-details-toggle');
     const detailsForm = document.getElementById('pt-details-form');
     const formSubmit = document.getElementById('pt-form-submit');
     const addTrackerBtn = document.getElementById('pt-add-tracker-btn');
+
+    const timerToggleBtn = document.getElementById('pt-dock-timer-toggle');
+    const timerResetBtn = document.getElementById('pt-dock-timer-reset');
+    const timerInput = document.getElementById('pt-dock-timer-input');
+
+    if (themeBtn) {
+      themeBtn.addEventListener('click', async () => {
+        const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        applyTheme(nextTheme);
+        await TrackerStorage.setTheme(nextTheme);
+      });
+    }
+
+    if (timerToggleBtn) {
+      timerToggleBtn.addEventListener('click', () => {
+        if (isDockTimerRunning) pauseDockTimer(); else startDockTimer();
+      });
+    }
+
+    if (timerResetBtn) {
+      timerResetBtn.addEventListener('click', () => {
+        resetDockTimer();
+      });
+    }
+
+    if (timerInput) {
+      timerInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          timerInput.blur();
+        }
+      });
+      timerInput.addEventListener('blur', () => {
+        const parsed = TrackerStorage.parseStringToSeconds(timerInput.value);
+        dockTimerSeconds = parsed;
+        updateDockTimerInputDisplay();
+      });
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && isPanelOpen) {
+        const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+        if (activeTag !== 'input' && activeTag !== 'textarea') {
+          e.preventDefault();
+          if (isDockTimerRunning) pauseDockTimer(); else startDockTimer();
+        }
+      }
+    });
 
     toggleBtn.addEventListener('click', () => {
       isPanelOpen = !isPanelOpen;
@@ -476,7 +614,13 @@
       const metricId = document.getElementById('pt-form-metric').value;
       const company = document.getElementById('pt-form-company').value;
       const role = document.getElementById('pt-form-role').value;
-      const notes = document.getElementById('pt-form-notes').value;
+      let notes = document.getElementById('pt-form-notes').value ? document.getElementById('pt-form-notes').value.trim() : '';
+
+      if (metricId === 'leetcode' && dockTimerSeconds > 0) {
+        const solveTimeStr = formatSolveTimeString(dockTimerSeconds);
+        notes = notes ? `${notes} (${solveTimeStr})` : solveTimeStr;
+        resetDockTimer();
+      }
 
       await TrackerStorage.addLog({ metricId, count: 1, company, role, notes });
 
@@ -663,7 +807,12 @@
         addBtn.style.borderColor = m.color + '60';
         addBtn.textContent = '+1 ' + m.name + ' (' + todayC + ')';
         addBtn.addEventListener('click', async () => {
-          await TrackerStorage.addLog({ metricId: m.id, count: 1 });
+          let notes = undefined;
+          if (m.id === 'leetcode' && dockTimerSeconds > 0) {
+            notes = formatSolveTimeString(dockTimerSeconds);
+            resetDockTimer();
+          }
+          await TrackerStorage.addLog({ metricId: m.id, count: 1, notes });
           await refreshData();
         });
 
@@ -681,6 +830,14 @@
         row.appendChild(undoBtn);
         secContainer.appendChild(row);
       });
+    }
+
+    // LeetCode Timer Widget visibility
+    const timerWidgetEl = el('pt-dock-timer-widget');
+    if (timerWidgetEl) {
+      const hasLeetcode = metrics.some(m => m.id === 'leetcode');
+      timerWidgetEl.classList.toggle('pt-hidden', !hasLeetcode);
+      updateDockTimerInputDisplay();
     }
 
     // Trackers list with delete
@@ -835,7 +992,7 @@
     });
 
     backdrop.innerHTML = [
-      '<div class="pt-modal-dialog">',
+      '<div class="pt-modal-dialog' + (currentTheme === 'dark' ? ' pt-dark' : '') + '">',
         '<div class="pt-modal-header">',
           '<div>',
             '<div class="pt-modal-header-title">' + formatDateNice(dateStr) + '</div>',
@@ -916,7 +1073,7 @@
     });
 
     backdrop.innerHTML = [
-      '<div class="pt-modal-dialog" style="width:380px;">',
+      '<div class="pt-modal-dialog' + (currentTheme === 'dark' ? ' pt-dark' : '') + '" style="width:380px;">',
         '<div class="pt-modal-header">',
           '<div class="pt-modal-header-title">Create New Tracker</div>',
           '<button class="pt-close-btn" id="pt-create-close">&times;</button>',
@@ -994,26 +1151,39 @@
 
   async function init() {
     mountFloatingDock();
+    const savedTheme = await TrackerStorage.getTheme();
+    applyTheme(savedTheme);
     await refreshData();
 
     observer.observe(document.body, { childList: true, subtree: true });
 
-    TrackerStorage.onChanged(() => refreshData());
+    TrackerStorage.onChanged((changes) => {
+      if (changes && changes.pt_theme) {
+        applyTheme(changes.pt_theme.newValue);
+      }
+      refreshData();
+    });
+
     if (typeof TrackerAuth !== 'undefined') {
       TrackerAuth.onAuthChanged(() => refreshData());
     }
 
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && (changes.logs || changes.metrics)) {
+        if (area === 'local' && (changes.logs || changes.metrics || changes.pt_theme)) {
+          if (changes.pt_theme) {
+            applyTheme(changes.pt_theme.newValue);
+          }
           refreshData();
         }
       });
     }
 
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-      chrome.runtime.onMessage.addListener((msg) => {
+      chrome.runtime.onMessage.addListener(async (msg) => {
         if (msg && msg.type === 'PT_REFRESH') {
+          const t = await TrackerStorage.getTheme();
+          applyTheme(t);
           refreshData();
         }
       });
