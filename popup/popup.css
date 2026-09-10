@@ -6,12 +6,30 @@
   --bg-input: #ffffff;
   --text-main: #202124;
   --text-sec: #5f6368;
-  --text-muted: #9aa0a6;
+  /* Darkened from #9aa0a6 so 9-11px labels clear WCAG AA on --bg-card */
+  --text-muted: #6b7075;
   --border: #e8eaed;
   --hover: #f1f3f4;
   --blue: #1a73e8;
   --blue-hover: #1557b0;
   --blue-light: #e8f0fe;
+  /* Blue used as TEXT on light surfaces (--blue itself only clears 4.27:1) */
+  --blue-text: #1967d2;
+  /* Foreground colors for filled buttons — flip in dark mode */
+  --on-blue: #ffffff;
+  --on-green: #ffffff;
+  --on-amber: #202124;
+  /* Green: --green tints indicators, --green-strong sits behind --on-green text */
+  --green: #1e8e3e;
+  --green-strong: #137333;
+  --green-strong-hover: #0d652d;
+  --green-ring: rgba(30, 142, 62, 0.22);
+  --amber: #f9ab00;
+  --amber-hover: #f29900;
+  --red: #d93025;
+  --tooltip-bg: #202124;
+  --tooltip-text: #ffffff;
+  --focus-ring: #1a73e8;
   --radius: 8px;
 }
 
@@ -22,12 +40,28 @@ body.pt-dark {
   --bg-input: #35363a;
   --text-main: #e8eaed;
   --text-sec: #9aa0a6;
-  --text-muted: #80868b;
+  /* Lightened from #80868b: the old value was 3.9:1 on --bg-card */
+  --text-muted: #a2a9ae;
   --border: #3c4043;
   --hover: #35363a;
   --blue: #8ab4f8;
   --blue-hover: #aecbfa;
   --blue-light: #174ea633;
+  --blue-text: #8ab4f8;
+  /* Dark-mode fills are light, so their foreground goes dark */
+  --on-blue: #202124;
+  --on-green: #202124;
+  --on-amber: #202124;
+  --green: #81c995;
+  --green-strong: #81c995;
+  --green-strong-hover: #a8dab5;
+  --green-ring: rgba(129, 201, 149, 0.28);
+  --amber: #fdd663;
+  --amber-hover: #fcc934;
+  --red: #f28b82;
+  --tooltip-bg: #e8eaed;
+  --tooltip-text: #202124;
+  --focus-ring: #8ab4f8;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -50,6 +84,33 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* Keyboard focus — one visible ring for every control, both themes.
+   Mouse/touch presses stay clean because this is :focus-visible only. */
+button:focus-visible,
+input:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Inputs already draw a border on focus, so keep the ring tight to it */
+input:focus-visible {
+  outline-offset: 1px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
 }
 
 /* Header */
@@ -169,8 +230,8 @@ body {
 }
 
 .timer-input:focus {
-  border-color: #1e8e3e;
-  box-shadow: 0 0 0 2px rgba(30, 142, 62, 0.2);
+  border-color: var(--green-strong);
+  box-shadow: 0 0 0 2px var(--green-ring);
 }
 
 .timer-btn-group {
@@ -189,21 +250,21 @@ body {
 }
 
 .timer-btn-start {
-  background: #1e8e3e;
-  color: #fff;
+  background: var(--green-strong);
+  color: var(--on-green);
 }
 
 .timer-btn-start:hover {
-  background: #188038;
+  background: var(--green-strong-hover);
 }
 
 .timer-btn-start.running {
-  background: #f9ab00;
-  color: #202124;
+  background: var(--amber);
+  color: var(--on-amber);
 }
 
 .timer-btn-start.running:hover {
-  background: #f29900;
+  background: var(--amber-hover);
 }
 
 .timer-btn-reset {
@@ -223,7 +284,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 6px 8px;
-  background: #f8f9fa;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 11px;
@@ -242,7 +303,7 @@ body {
   height: 18px;
   border-radius: 50%;
   background: var(--blue);
-  color: #fff;
+  color: var(--on-blue);
   font-size: 10px;
   font-weight: 700;
   display: flex;
@@ -254,16 +315,17 @@ body {
 .account-email {
   font-weight: 500;
   color: var(--text-main);
-  truncate: ellipsis;
   overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+  min-width: 0;
 }
 
 .account-signout-btn {
   background: none;
   border: none;
-  color: #d93025;
+  color: var(--red);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
@@ -280,8 +342,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: #fff;
-  border: 1px solid #dadce0;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 5px 8px;
   font-size: 11px;
@@ -293,8 +355,13 @@ body {
 
 .account-signin-btn:hover {
   background: var(--hover);
-  border-color: var(--blue);
-  color: var(--blue);
+  border-color: var(--blue-text);
+  color: var(--blue-text);
+}
+
+/* Inline status / error line under the date row */
+.status-line {
+  color: var(--text-sec);
 }
 
 .date-row {
@@ -336,9 +403,14 @@ body {
   transition: all 0.12s;
 }
 
+.tab-item:hover {
+  background: var(--border);
+  color: var(--text-main);
+}
+
 .tab-item.active {
   background: var(--blue-light);
-  color: var(--blue);
+  color: var(--blue-text);
   font-weight: 600;
   border-color: var(--blue);
 }
@@ -366,13 +438,15 @@ body {
 
 .tab-add-btn:hover {
   background: var(--blue-light);
-  color: var(--blue);
+  color: var(--blue-text);
+  border-color: var(--blue);
+  border-style: solid;
 }
 
 /* Counter */
 .counter-card {
-  background: #f8fafd;
-  border: 1px solid #d2e3fc;
+  background: var(--bg-card-contrast);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
   display: flex;
@@ -416,22 +490,26 @@ body {
 .btn-primary {
   flex: 1;
   background: var(--blue);
-  color: #fff;
+  color: var(--on-blue);
   border: none;
   border-radius: var(--radius);
   padding: 9px 14px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background 0.12s, filter 0.12s;
 }
 
-.btn-primary:hover { background: var(--blue-hover); }
+/* popup.js paints this button with the active tracker color via an inline
+   style, so the feedback is a filter rather than a background swap. */
+.btn-primary:hover { background: var(--blue-hover); filter: brightness(1.06); }
+
+.btn-primary:active { filter: brightness(0.93); }
 
 .btn-secondary {
   width: 38px;
   height: 38px;
-  background: #fff;
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-sec);
@@ -444,13 +522,14 @@ body {
 
 .btn-secondary:hover {
   background: var(--hover);
-  color: #d93025;
+  color: var(--red);
+  border-color: var(--red);
 }
 
 /* Details */
 .details-section {
   border-top: 1px solid var(--border);
-  padding-top: 6px;
+  padding-top: 8px;
 }
 
 .details-toggle {
@@ -467,7 +546,7 @@ body {
   padding: 2px 0;
 }
 
-.details-toggle:hover { color: var(--blue); }
+.details-toggle:hover { color: var(--blue-text); }
 
 .arrow-down {
   display: inline-block;
@@ -512,7 +591,7 @@ body {
 
 .btn-sm-primary {
   background: var(--blue);
-  color: #fff;
+  color: var(--on-blue);
   border: none;
   border-radius: 4px;
   padding: 4px 10px;
@@ -537,24 +616,36 @@ body {
   flex-direction: column;
   align-items: center;
   flex: 1;
+  min-width: 0;
 }
 
 .stat-value {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
 }
 
 .stat-name {
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-muted);
   text-transform: uppercase;
+  letter-spacing: 0.2px;
   font-weight: 500;
+  text-align: center;
 }
 
 .stat-divider {
   width: 1px;
-  height: 16px;
+  height: 20px;
   background: var(--border);
+  flex-shrink: 0;
+}
+
+/* The LeetCode time bar packs four columns into the same 340px shell */
+#leetcode-time-stats .stat-name {
+  font-size: 9px;
+  letter-spacing: 0;
 }
 
 /* Calendar button */
@@ -577,8 +668,33 @@ body {
 
 .calendar-btn:hover {
   background: var(--hover);
-  color: var(--blue);
-  border-color: var(--blue-light);
+  color: var(--blue-text);
+  border-color: var(--blue);
+}
+
+/* Footer stacks the calendar link above the export pair */
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Specificity has to beat .modal-actions, which this row also carries */
+.footer .export-row {
+  margin-top: 0;
+  gap: 6px;
+}
+
+.footer .export-row .btn-cancel {
+  flex: 1;
+  padding: 6px 10px;
+  color: var(--text-sec);
+  font-weight: 600;
+}
+
+.footer .export-row .btn-cancel:hover {
+  background: var(--hover);
+  color: var(--text-main);
 }
 
 /* Modal */
@@ -619,8 +735,17 @@ body {
   background: none;
   border: none;
   font-size: 16px;
+  line-height: 1;
   cursor: pointer;
   color: var(--text-sec);
+  padding: 2px 6px;
+  border-radius: 50%;
+  transition: background 0.12s, color 0.12s;
+}
+
+.close-btn:hover {
+  background: var(--hover);
+  color: var(--text-main);
 }
 
 .form-group {
@@ -659,9 +784,14 @@ body {
   cursor: pointer;
 }
 
+.color-option:hover {
+  transform: scale(1.1);
+}
+
 .color-option.selected {
   border-color: var(--text-main);
   transform: scale(1.1);
+  box-shadow: 0 0 0 1px var(--bg-page) inset;
 }
 
 .modal-actions {
@@ -674,15 +804,21 @@ body {
 .btn-cancel {
   background: none;
   border: 1px solid var(--border);
+  color: var(--text-main);
   padding: 5px 10px;
   border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
+  transition: background 0.12s;
+}
+
+.btn-cancel:hover {
+  background: var(--hover);
 }
 
 .btn-submit {
   background: var(--blue);
-  color: #fff;
+  color: var(--on-blue);
   border: none;
   padding: 5px 12px;
   border-radius: 4px;
@@ -693,7 +829,7 @@ body {
 
 /* Goal Meter */
 .goal-meter {
-  background: #f8f9fa;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 10px;
@@ -714,9 +850,13 @@ body {
 }
 
 .goal-label strong {
-  color: var(--blue);
+  color: var(--blue-text);
   cursor: pointer;
   text-decoration: underline dotted;
+}
+
+.goal-label strong:hover {
+  text-decoration: underline solid;
 }
 
 .goal-status {
@@ -727,7 +867,7 @@ body {
 .goal-bar-wrap {
   width: 100%;
   height: 6px;
-  background: #e8eaed;
+  background: var(--border);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -741,19 +881,30 @@ body {
 }
 
 .goal-bar-fill.goal-met {
-  background: #1e8e3e;
+  background: var(--green);
+}
+
+/* First-run card reuses .goal-meter's shell but reads as guidance, not data */
+.first-run-card {
+  border-style: dashed;
+  gap: 6px;
+}
+
+.first-run-card .goal-status {
+  color: var(--text-main);
+  font-weight: 600;
 }
 
 /* 30-Day Activity Section */
 .activity-section {
   border-top: 1px solid var(--border);
-  padding-top: 6px;
+  padding-top: 8px;
 }
 
 .activity-toggle {
   background: none;
   border: none;
-  color: var(--blue);
+  color: var(--blue-text);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
@@ -773,7 +924,7 @@ body {
 
 .activity-bars {
   height: 44px;
-  background: #f8f9fa;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 4px 4px 2px;
@@ -793,7 +944,7 @@ body {
 
 .pop-bar {
   width: 100%;
-  background: #dadce0;
+  background: var(--border);
   min-height: 2px;
   border-radius: 2px 2px 0 0;
   transition: height 0.15s;
@@ -813,10 +964,10 @@ body {
   bottom: calc(100% + 2px);
   left: 50%;
   transform: translateX(-50%);
-  background: #202124;
-  color: #fff;
-  font-size: 9px;
-  padding: 2px 4px;
+  background: var(--tooltip-bg);
+  color: var(--tooltip-text);
+  font-size: 10px;
+  padding: 2px 5px;
   border-radius: 3px;
   white-space: nowrap;
   pointer-events: none;
@@ -831,7 +982,7 @@ body {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 4px;
-  background: #f8f9fa;
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px 2px;
@@ -846,11 +997,27 @@ body {
 }
 
 .act-stat-lbl {
-  font-size: 8px;
+  font-size: 9px;
   color: var(--text-sec);
   text-transform: uppercase;
+  letter-spacing: 0.2px;
   font-weight: 600;
   margin-top: 1px;
+}
+
+/* Entry history list */
+.entries-range-bar {
+  margin-bottom: 6px;
+}
+
+.entries-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 176px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
 .hidden { display: none !important; }

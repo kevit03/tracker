@@ -63,7 +63,8 @@
 
 .pt-goal-tag:hover {
   background: #d2e3fc;
-  color: #1a73e8;
+  /* Blue 900: #1a73e8 on #d2e3fc is only 3.5:1 at this 10px size */
+  color: #174ea6;
 }
 
 /* 30-Day Activity Chart */
@@ -173,7 +174,7 @@
 }
 
 .pt-act-stat-lbl {
-  font-size: 8px;
+  font-size: 9px;
   color: #5f6368;
   text-transform: uppercase;
   font-weight: 600;
@@ -220,7 +221,8 @@
 
 [data-datekey]:hover .pt-quick-add-cell,
 [role="gridcell"]:hover .pt-quick-add-cell,
-.pt-quick-add-cell:hover {
+.pt-quick-add-cell:hover,
+.pt-quick-add-cell:focus-visible {
   opacity: 1;
 }
 
@@ -229,6 +231,34 @@
   color: #fff;
   border-color: #1a73e8;
   transform: scale(1.1);
+}
+
+/* Day-cell chrome follows the OS scheme, because these elements live inside
+   Google's grid and cannot be reached by the dock's .pt-dark class.
+   Google Calendar's default theme setting is "Device default", so this
+   tracks it in the common case; on a mismatch the controls stay legible,
+   just cooler than their surroundings. */
+@media (prefers-color-scheme: dark) {
+  .pt-quick-add-cell {
+    background: #292a2d;
+    border-color: #5f6368;
+    color: #e8eaed;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  }
+
+  .pt-quick-add-cell:hover {
+    background: #8ab4f8;
+    border-color: #8ab4f8;
+    color: #202124;
+  }
+
+  .pt-quick-add-cell:focus-visible {
+    outline-color: #8ab4f8;
+  }
+
+  .pt-badge {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
 }
 
 /* Suppress any badge or quick-add from appearing in column headers or nav headers */
@@ -249,6 +279,41 @@ aside .pt-quick-add-cell {
   z-index: 999999;
   font-family: 'Google Sans', Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
   user-select: none;
+}
+
+/* Keyboard focus. Scoped to our own roots so nothing leaks into Google's UI.
+   The ring is drawn in Blue 600 on light and Blue 200 on dark; both clear 3:1
+   against every surface we paint behind them. */
+#pt-floating-dock button:focus-visible,
+#pt-floating-dock input:focus-visible,
+#pt-floating-dock select:focus-visible,
+.pt-modal-backdrop button:focus-visible,
+.pt-modal-backdrop input:focus-visible,
+.pt-modal-backdrop select:focus-visible,
+.pt-quick-add-cell:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
+#pt-floating-dock.pt-dark button:focus-visible,
+#pt-floating-dock.pt-dark input:focus-visible,
+#pt-floating-dock.pt-dark select:focus-visible,
+.pt-modal-dialog.pt-dark button:focus-visible,
+.pt-modal-dialog.pt-dark input:focus-visible,
+.pt-modal-dialog.pt-dark select:focus-visible {
+  outline-color: #8ab4f8;
+}
+
+/* A focused delete control must be visible even before its hover reveal */
+#pt-floating-dock .pt-delete-tracker-btn:focus-visible {
+  opacity: 1;
+}
+
+#pt-floating-dock button:disabled,
+.pt-modal-backdrop button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .pt-dock-toggle {
@@ -294,6 +359,8 @@ aside .pt-quick-add-cell {
   bottom: calc(100% + 10px);
   right: 0;
   width: 340px;
+  /* Never spill past the viewport on a narrow or short Calendar window */
+  max-width: calc(100vw - 48px);
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 8px 28px rgba(60,64,67,0.22), 0 2px 6px rgba(60,64,67,0.10);
@@ -525,7 +592,7 @@ aside .pt-quick-add-cell {
 .pt-delete-tracker-btn {
   background: none;
   border: none;
-  color: #bdc1c6;
+  color: #80868b;
   font-size: 14px;
   cursor: pointer;
   padding: 0 2px;
@@ -670,14 +737,16 @@ aside .pt-quick-add-cell {
 
 .pt-entry-meta {
   font-size: 10px;
-  color: #9aa0a6;
+  /* Grey 600-ish: #9aa0a6 was 2.6:1 on the white dialog */
+  color: #70757a;
   margin-top: 2px;
 }
 
 .pt-delete-entry {
   background: none;
   border: none;
-  color: #bdc1c6;
+  /* #bdc1c6 was 1.8:1 — below the 3:1 floor for an interactive glyph */
+  color: #80868b;
   cursor: pointer;
   font-size: 13px;
   padding: 2px 4px;
@@ -734,7 +803,8 @@ aside .pt-quick-add-cell {
 
 .pt-empty-state {
   text-align: center;
-  color: #9aa0a6;
+  /* #9aa0a6 on white is 2.6:1; Grey 700 keeps the muted read and passes AA */
+  color: #5f6368;
   font-size: 12px;
   padding: 16px 0;
 }
@@ -867,13 +937,17 @@ aside .pt-quick-add-cell {
   background: #1557b0;
 }
 
+/* Amber with dark text (8.8:1) instead of white on #e37400 (3.1:1),
+   and it now matches the popup's running state. */
 .pt-timer-btn-start.running {
-  background: #e37400;
-  border-color: #e37400;
+  background: #f9ab00;
+  border-color: #f9ab00;
+  color: #202124;
 }
 
 .pt-timer-btn-start.running:hover {
-  background: #b05a00;
+  background: #f29900;
+  border-color: #f29900;
 }
 
 .pt-timer-btn-reset {
@@ -939,23 +1013,29 @@ aside .pt-quick-add-cell {
   color: #e8eaed;
 }
 
+/* The account bar is built with inline styles in content.js, so these
+   overrides need !important to win — same convention as .pt-dock-stats-bar. */
 #pt-floating-dock.pt-dark #pt-dock-account {
-  background: #282a2d;
-  border-color: #3c4043;
+  background: #282a2d !important;
+  border-color: #3c4043 !important;
 }
 
 #pt-floating-dock.pt-dark #pt-dock-account-email {
-  color: #e8eaed;
+  color: #e8eaed !important;
+}
+
+#pt-floating-dock.pt-dark #pt-dock-signout {
+  color: #f28b82 !important;
 }
 
 #pt-floating-dock.pt-dark #pt-dock-signin {
-  background: #2d2f31;
-  border-color: #5f6368;
-  color: #e8eaed;
+  background: #2d2f31 !important;
+  border-color: #5f6368 !important;
+  color: #e8eaed !important;
 }
 
 #pt-floating-dock.pt-dark #pt-dock-signin:hover {
-  background: #35383b;
+  background: #35383b !important;
 }
 
 #pt-floating-dock.pt-dark .pt-hero-card {
@@ -963,8 +1043,38 @@ aside .pt-quick-add-cell {
   border-color: #3c4043;
 }
 
+/* Blue 600 on the dark hero card is only 3.2:1; Blue 200 is 6.8:1 */
+#pt-floating-dock.pt-dark .pt-hero-count {
+  color: #8ab4f8;
+}
+
 #pt-floating-dock.pt-dark .pt-hero-label {
   color: #9aa0a6;
+}
+
+/* Filled blue flips to a light fill with dark text in dark mode:
+   white on #8ab4f8 is 2.1:1, #202124 on #8ab4f8 is 8.1:1. */
+#pt-floating-dock.pt-dark .pt-btn-primary,
+.pt-modal-dialog.pt-dark .pt-btn-primary {
+  background: #8ab4f8;
+  color: #202124;
+}
+
+#pt-floating-dock.pt-dark .pt-btn-primary:hover,
+.pt-modal-dialog.pt-dark .pt-btn-primary:hover {
+  background: #aecbfa;
+}
+
+/* :not(.running) so the amber running state below still wins */
+#pt-floating-dock.pt-dark .pt-timer-btn-start:not(.running) {
+  background: #8ab4f8;
+  border-color: #8ab4f8;
+  color: #202124;
+}
+
+#pt-floating-dock.pt-dark .pt-timer-btn-start:not(.running):hover {
+  background: #aecbfa;
+  border-color: #aecbfa;
 }
 
 #pt-floating-dock.pt-dark .pt-btn-secondary {
@@ -984,6 +1094,15 @@ aside .pt-quick-add-cell {
 
 #pt-floating-dock.pt-dark .pt-btn-metric:hover {
   background: #35383b;
+}
+
+/* Red 600 is 2.5:1 on these dark surfaces; Red 200 is 5.0:1 */
+#pt-floating-dock.pt-dark .pt-btn-metric-undo:hover {
+  color: #f28b82;
+}
+
+#pt-floating-dock.pt-dark .pt-delete-tracker-btn:hover {
+  color: #f28b82;
 }
 
 #pt-floating-dock.pt-dark .pt-timer-widget {
@@ -1041,12 +1160,20 @@ aside .pt-quick-add-cell {
   border-color: #8ab4f8;
 }
 
+/* The UA default placeholder grey is unreadable on #202124 */
+#pt-floating-dock.pt-dark .pt-details-form input::placeholder,
+#pt-floating-dock.pt-dark .pt-timer-input::placeholder,
+.pt-modal-dialog.pt-dark .pt-modal-form input::placeholder {
+  color: #9aa0a6;
+  opacity: 1;
+}
+
 #pt-floating-dock.pt-dark .pt-section-title {
   color: #9aa0a6;
 }
 
 #pt-floating-dock.pt-dark #pt-add-tracker-btn {
-  color: #8ab4f8;
+  color: #8ab4f8 !important;
 }
 
 #pt-floating-dock.pt-dark .pt-tracker-item:hover {
@@ -1055,6 +1182,11 @@ aside .pt-quick-add-cell {
 
 #pt-floating-dock.pt-dark .pt-tracker-item span {
   color: #e8eaed !important;
+}
+
+/* Keep the total count one step quieter than the tracker name */
+#pt-floating-dock.pt-dark .pt-tracker-right span {
+  color: #9aa0a6 !important;
 }
 
 #pt-floating-dock.pt-dark .pt-goal-tag {
@@ -1075,7 +1207,11 @@ aside .pt-quick-add-cell {
   color: #8ab4f8;
 }
 
-#pt-floating-dock.pt-dark .pt-act-tab:not([style*="background: rgb"]) {
+/* content.js sets every tab's background inline, so the old
+   :not([style*="background: rgb"]) guard matched nothing and unselected tabs
+   stayed white in dark mode. An unselected tab is always exactly #fff, which
+   serializes to rgb(255, 255, 255) — match on that instead. */
+#pt-floating-dock.pt-dark .pt-act-tab[style*="rgb(255, 255, 255)"] {
   background: #2d2f31 !important;
   color: #bdc1c6 !important;
   border-color: #5f6368 !important;
@@ -1088,6 +1224,13 @@ aside .pt-quick-add-cell {
 
 #pt-floating-dock.pt-dark .pt-bar {
   background: #3c4043;
+}
+
+/* A near-black tooltip disappears on the dark chart; invert it */
+#pt-floating-dock.pt-dark .pt-bar-tooltip {
+  background: #e8eaed;
+  color: #202124;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
 
 #pt-floating-dock.pt-dark .pt-activity-stats {

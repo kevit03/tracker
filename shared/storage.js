@@ -15,20 +15,28 @@ const TrackerStorage = (() => {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   }
 
+  // Upper bound for the solve timer. A free-text field must never be able to
+  // arm a countdown longer than a day (or a negative one).
+  const MAX_TIMER_SECONDS = 86400;
+
   function parseStringToSeconds(str) {
     if (!str || typeof str !== 'string') return 0;
     const trimmed = str.trim();
     if (/^\d+$/.test(trimmed)) {
       const n = parseInt(trimmed, 10);
-      return n <= 300 ? n * 60 : n;
+      return Math.min(MAX_TIMER_SECONDS, n <= 300 ? n * 60 : n);
     }
-    const parts = trimmed.split(':').map(p => parseInt(p, 10) || 0);
-    if (parts.length === 2) {
-      return parts[0] * 60 + parts[1];
-    } else if (parts.length === 3) {
-      return parts[0] * 3600 + parts[1] * 60 + parts[2];
-    }
-    return 0;
+    // Every component must be a plain unsigned integer. "-5:30" or "1:2:3:4"
+    // are rejected outright rather than silently producing a negative duration.
+    const rawParts = trimmed.split(':');
+    if (rawParts.length !== 2 && rawParts.length !== 3) return 0;
+    if (!rawParts.every(p => /^\d+$/.test(p.trim()))) return 0;
+    const parts = rawParts.map(p => parseInt(p.trim(), 10));
+    const total = parts.length === 2
+      ? parts[0] * 60 + parts[1]
+      : parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (!isFinite(total) || total <= 0) return 0;
+    return Math.min(MAX_TIMER_SECONDS, total);
   }
 
   const DEFAULT_METRICS = [
@@ -61,6 +69,42 @@ const TrackerStorage = (() => {
     const next = writeLock.then(() => fn(), () => fn());
     writeLock = next.catch(() => {});
     return next;
+  }
+
+  function readRaw(key) {
+    return new Promise(resolve => {
+      getStorageArea().get([key], result => resolve(result));
+    });
+  }
+
+  function writeRaw(key, value) {
+    return new Promise(resolve => {
+      getStorageArea().set({ [key]: value }, () => resolve(true));
+    });
+  }
+
+  // The mutex above only serializes writers inside a single JS context, and the
+  // popup and the content script each load their own copy of this module against
+  // one shared chrome.storage.local. chrome.storage has no compare-and-swap, so
+  // a read-modify-write here can still be clobbered by the other context.
+  // Re-read after every write and re-apply the mutation when that happens.
+  const MAX_WRITE_ATTEMPTS = 5;
+
+  // apply(currentValue, alreadyWrote) must return either
+  //   { write: false, result }                       -> nothing to do
+  //   { write: true, value, verify(readBack), result } -> write and confirm
+  async function mutateVerified(key, readValue, apply) {
+    let lastResult;
+    let wrote = false;
+    for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
+      const plan = apply(readValue(await readRaw(key)), wrote);
+      lastResult = plan.result;
+      if (!plan.write) return plan.result;
+      await writeRaw(key, plan.value);
+      wrote = true;
+      if (plan.verify(readValue(await readRaw(key)))) return plan.result;
+    }
+    return lastResult;
   }
 
   function normalizeEmail(email) {
@@ -128,6 +172,18 @@ const TrackerStorage = (() => {
     return Array.isArray(result && result[STORAGE_KEYS.METRICS]) ? result[STORAGE_KEYS.METRICS] : [];
   }
 
+  // Seeding the defaults used to be an unlocked set() straight out of getMetrics,
+  // which could overwrite an addMetric that was mid-flight in another context and
+  // silently drop the new tracker. Route it through the queue and re-check first.
+  function seedDefaultMetrics() {
+    return enqueueWrite(async () => {
+      const existing = safeGetMetrics(await readRaw(STORAGE_KEYS.METRICS));
+      if (existing.length > 0) return false;
+      await writeRaw(STORAGE_KEYS.METRICS, DEFAULT_METRICS.map(m => ({ ...m })));
+      return true;
+    });
+  }
+
   async function getCurrentUserEmail() {
     if (typeof TrackerAuth !== 'undefined' && TrackerAuth && typeof TrackerAuth.getCurrentUser === 'function') {
       try {
@@ -155,7 +211,7 @@ const TrackerStorage = (() => {
           let allMetrics = safeGetMetrics(result);
           if (allMetrics.length === 0) {
             allMetrics = [...DEFAULT_METRICS];
-            getStorageArea().set({ [STORAGE_KEYS.METRICS]: DEFAULT_METRICS });
+            seedDefaultMetrics();
           }
           const filtered = allMetrics.map(m => {
             let dailyGoal = m.dailyGoal;
@@ -186,19 +242,15 @@ const TrackerStorage = (() => {
 
     async setMetricGoal(metricId, goalNumber) {
       const goal = Math.max(1, parseInt(goalNumber, 10) || 1);
+      const hasGoal = list => {
+        const found = list.find(m => m && m.id === metricId);
+        return !found || found.dailyGoal === goal;
+      };
       return enqueueWrite(async () => {
-        return new Promise(resolve => {
-          getStorageArea().get([STORAGE_KEYS.METRICS], result => {
-            let allMetrics = safeGetMetrics(result);
-            if (allMetrics.length === 0) allMetrics = [...DEFAULT_METRICS];
-            const updated = allMetrics.map(m => {
-              if (m.id === metricId) {
-                return { ...m, dailyGoal: goal };
-              }
-              return m;
-            });
-            getStorageArea().set({ [STORAGE_KEYS.METRICS]: updated }, () => resolve(true));
-          });
+        return mutateVerified(STORAGE_KEYS.METRICS, safeGetMetrics, current => {
+          const allMetrics = current.length === 0 ? [...DEFAULT_METRICS] : current;
+          const updated = allMetrics.map(m => (m && m.id === metricId ? { ...m, dailyGoal: goal } : m));
+          return { write: true, value: updated, verify: hasGoal, result: true };
         });
       });
     },
@@ -226,15 +278,16 @@ const TrackerStorage = (() => {
           createdAt: new Date().toISOString()
         };
 
-        return new Promise(resolve => {
-          getStorageArea().get([STORAGE_KEYS.METRICS], result => {
-            let allMetrics = safeGetMetrics(result);
-            if (allMetrics.length === 0) {
-              allMetrics = [...DEFAULT_METRICS];
-            }
-            allMetrics.push(newMetric);
-            getStorageArea().set({ [STORAGE_KEYS.METRICS]: allMetrics }, () => resolve(newMetric));
-          });
+        const hasMetric = list => list.some(m => m && m.id === newMetric.id);
+        return mutateVerified(STORAGE_KEYS.METRICS, safeGetMetrics, current => {
+          if (hasMetric(current)) return { write: false, result: newMetric };
+          const allMetrics = current.length === 0 ? [...DEFAULT_METRICS] : current;
+          return {
+            write: true,
+            value: allMetrics.concat([newMetric]),
+            verify: hasMetric,
+            result: newMetric
+          };
         });
       });
     },
@@ -313,28 +366,22 @@ const TrackerStorage = (() => {
       }
       return enqueueWrite(async () => {
         const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
-        return new Promise(resolve => {
-          getStorageArea().get([STORAGE_KEYS.METRICS], result => {
-            const allMetrics = safeGetMetrics(result);
-            const targetIndex = allMetrics.findIndex(m => m.id === id);
-            if (targetIndex === -1) {
-              resolve(false);
-              return;
-            }
-            const target = allMetrics[targetIndex];
-            if (target.isDefault || target.id === 'jobs' || target.id === 'leetcode') {
-              resolve(false);
-              return;
-            }
-            const owner = normalizeEmail(target.userEmail);
-            const isAuthorized = (!targetEmail && !owner) || (targetEmail && owner === targetEmail);
-            if (!isAuthorized) {
-              resolve(false);
-              return;
-            }
-            const filtered = allMetrics.filter(m => m.id !== id);
-            getStorageArea().set({ [STORAGE_KEYS.METRICS]: filtered }, () => resolve(true));
-          });
+        const isGone = list => !list.some(m => m && m.id === id);
+        return mutateVerified(STORAGE_KEYS.METRICS, safeGetMetrics, (allMetrics, alreadyWrote) => {
+          const target = allMetrics.find(m => m && m.id === id);
+          if (!target) return { write: false, result: alreadyWrote };
+          if (target.isDefault || target.id === 'jobs' || target.id === 'leetcode') {
+            return { write: false, result: false };
+          }
+          const owner = normalizeEmail(target.userEmail);
+          const isAuthorized = (!targetEmail && !owner) || (targetEmail && owner === targetEmail);
+          if (!isAuthorized) return { write: false, result: false };
+          return {
+            write: true,
+            value: allMetrics.filter(m => !m || m.id !== id),
+            verify: isGone,
+            result: true
+          };
         });
       });
     },
@@ -403,27 +450,25 @@ const TrackerStorage = (() => {
       return enqueueWrite(async () => {
         const customEmail = logData.userEmail !== undefined ? logData.userEmail : userEmailOverride;
         const userEmail = normalizeEmail(customEmail !== undefined ? customEmail : await getCurrentUserEmail());
-        return new Promise(resolve => {
-          getStorageArea().get([STORAGE_KEYS.LOGS], result => {
-            const logs = safeGetLogs(result);
-            const now = new Date();
-            const logDate = logData.date || getLocalDateStr(now);
+        const now = new Date();
 
-            const newLog = {
-              id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-              metricId: logData.metricId || 'jobs',
-              userEmail: userEmail || null,
-              count: Math.max(1, parseInt(logData.count, 10) || 1),
-              date: logDate,
-              timestamp: now.toISOString(),
-              company: (logData.company || '').trim(),
-              role: (logData.role || '').trim(),
-              notes: (logData.notes || '').trim(),
-            };
+        const newLog = {
+          id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+          metricId: logData.metricId || 'jobs',
+          userEmail: userEmail || null,
+          count: Math.max(1, parseInt(logData.count, 10) || 1),
+          date: logData.date || getLocalDateStr(now),
+          timestamp: now.toISOString(),
+          company: (logData.company || '').trim(),
+          role: (logData.role || '').trim(),
+          notes: (logData.notes || '').trim(),
+          solveTimeSeconds: Math.max(0, parseInt(logData.solveTimeSeconds, 10) || 0),
+        };
 
-            logs.push(newLog);
-            getStorageArea().set({ [STORAGE_KEYS.LOGS]: logs }, () => resolve(newLog));
-          });
+        const hasLog = list => list.some(l => l && l.id === newLog.id);
+        return mutateVerified(STORAGE_KEYS.LOGS, safeGetLogs, logs => {
+          if (hasLog(logs)) return { write: false, result: newLog };
+          return { write: true, value: logs.concat([newLog]), verify: hasLog, result: newLog };
         });
       });
     },
@@ -432,24 +477,19 @@ const TrackerStorage = (() => {
       if (!id) return false;
       return enqueueWrite(async () => {
         const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
-        return new Promise(resolve => {
-          getStorageArea().get([STORAGE_KEYS.LOGS], result => {
-            const logs = safeGetLogs(result);
-            const targetIndex = logs.findIndex(l => l.id === id);
-            if (targetIndex === -1) {
-              resolve(false);
-              return;
-            }
-            const log = logs[targetIndex];
-            const logEmail = normalizeEmail(log.userEmail);
-            const isAuthorized = (!targetEmail && !logEmail) || (targetEmail && logEmail === targetEmail);
-            if (!isAuthorized) {
-              resolve(false);
-              return;
-            }
-            const filtered = logs.filter(l => l.id !== id);
-            getStorageArea().set({ [STORAGE_KEYS.LOGS]: filtered }, () => resolve(true));
-          });
+        const isGone = list => !list.some(l => l && l.id === id);
+        return mutateVerified(STORAGE_KEYS.LOGS, safeGetLogs, (logs, alreadyWrote) => {
+          const log = logs.find(l => l && l.id === id);
+          if (!log) return { write: false, result: alreadyWrote };
+          const logEmail = normalizeEmail(log.userEmail);
+          const isAuthorized = (!targetEmail && !logEmail) || (targetEmail && logEmail === targetEmail);
+          if (!isAuthorized) return { write: false, result: false };
+          return {
+            write: true,
+            value: logs.filter(l => !l || l.id !== id),
+            verify: isGone,
+            result: true
+          };
         });
       });
     },
@@ -458,35 +498,34 @@ const TrackerStorage = (() => {
       return enqueueWrite(async () => {
         const targetDate = date || getLocalDateStr();
         const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
-        return new Promise(resolve => {
-          getStorageArea().get([STORAGE_KEYS.LOGS], result => {
-            const logs = safeGetLogs(result);
-            const indexed = logs.map((l, index) => ({ log: l, originalIndex: index }));
-            const filtered = indexed.filter(item => {
-              const l = item.log;
-              if (!l || l.metricId !== metricId || l.date !== targetDate) return false;
-              const logEmail = normalizeEmail(l.userEmail);
-              if (!targetEmail) return !logEmail;
-              return logEmail === targetEmail;
-            });
-
-            if (filtered.length === 0) {
-              resolve(false);
-              return;
-            }
-
-            filtered.sort((a, b) => {
-              const timeA = new Date(a.log.timestamp || a.log.date || 0).getTime();
-              const timeB = new Date(b.log.timestamp || b.log.date || 0).getTime();
-              const diff = timeB - timeA;
-              if (diff !== 0) return diff;
-              return b.originalIndex - a.originalIndex;
-            });
-
-            const newestId = filtered[0].log.id;
-            const remaining = logs.filter(l => l.id !== newestId);
-            getStorageArea().set({ [STORAGE_KEYS.LOGS]: remaining }, () => resolve(true));
+        return mutateVerified(STORAGE_KEYS.LOGS, safeGetLogs, (logs, alreadyWrote) => {
+          const indexed = logs.map((l, index) => ({ log: l, originalIndex: index }));
+          const filtered = indexed.filter(item => {
+            const l = item.log;
+            if (!l || l.metricId !== metricId || l.date !== targetDate) return false;
+            const logEmail = normalizeEmail(l.userEmail);
+            if (!targetEmail) return !logEmail;
+            return logEmail === targetEmail;
           });
+
+          // Nothing left to undo. Counts must never be driven negative.
+          if (filtered.length === 0) return { write: false, result: alreadyWrote };
+
+          filtered.sort((a, b) => {
+            const timeA = new Date(a.log.timestamp || a.log.date || 0).getTime();
+            const timeB = new Date(b.log.timestamp || b.log.date || 0).getTime();
+            const diff = timeB - timeA;
+            if (diff !== 0) return diff;
+            return b.originalIndex - a.originalIndex;
+          });
+
+          const newestId = filtered[0].log.id;
+          return {
+            write: true,
+            value: logs.filter(l => !l || l.id !== newestId),
+            verify: list => !list.some(l => l && l.id === newestId),
+            result: true
+          };
         });
       });
     },
@@ -575,6 +614,54 @@ const TrackerStorage = (() => {
 
     formatSecondsToMMSS,
     parseStringToSeconds,
+
+    formatTimeHMS(totalSeconds) {
+      const s = Math.max(0, parseInt(totalSeconds, 10) || 0);
+      const hrs = Math.floor(s / 3600);
+      const mins = Math.floor((s % 3600) / 60);
+      const secs = s % 60;
+      if (hrs > 0) {
+        return hrs + 'h ' + mins + 'm';
+      }
+      if (mins > 0 && secs > 0) {
+        return mins + 'm ' + secs + 's';
+      }
+      if (mins > 0) {
+        return mins + 'm';
+      }
+      return secs + 's';
+    },
+
+    async getLeetcodeTimeStats(userEmailOverride) {
+      const logs = await this.getLogs({ metricId: 'leetcode' }, userEmailOverride);
+      const today = getLocalDateStr();
+      let totalSeconds = 0;
+      let todaySeconds = 0;
+      let sessionCount = 0;
+      let todaySessionCount = 0;
+
+      logs.forEach(l => {
+        const sec = parseInt(l.solveTimeSeconds, 10) || 0;
+        if (sec > 0) {
+          totalSeconds += sec;
+          sessionCount++;
+          if (l.date === today) {
+            todaySeconds += sec;
+            todaySessionCount++;
+          }
+        }
+      });
+
+      const avgSeconds = sessionCount > 0 ? Math.round(totalSeconds / sessionCount) : 0;
+
+      return {
+        totalSeconds,
+        todaySeconds,
+        sessionCount,
+        todaySessionCount,
+        avgSeconds
+      };
+    },
 
     async getTheme() {
       return new Promise(resolve => {

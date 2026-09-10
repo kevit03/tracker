@@ -11,8 +11,11 @@
 
   // LeetCode Dock Timer State
   let dockTimerSeconds = 0;
+  let dockTimerTargetSeconds = 0;
   let dockTimerInterval = null;
   let isDockTimerRunning = false;
+  let dockTimerInputAtFocus = null;
+  let isGlobalKeyHandlerBound = false;
 
   function applyTheme(theme) {
     currentTheme = theme === 'dark' ? 'dark' : 'light';
@@ -36,18 +39,44 @@
     }
   }
 
+  function onDockTimerFinished() {
+    pauseDockTimer();
+    const inp = document.getElementById('pt-dock-timer-input');
+    if (inp) {
+      inp.style.borderColor = '#d93025';
+      inp.style.boxShadow = '0 0 0 2px rgba(217,48,37,0.2)';
+      setTimeout(() => {
+        inp.style.borderColor = '';
+        inp.style.boxShadow = '';
+      }, 2000);
+    }
+  }
+
+  function tickDockTimer() {
+    dockTimerSeconds--;
+    // Never let the countdown run past zero, even if the target was edited mid-run.
+    if (dockTimerSeconds <= 0) {
+      dockTimerSeconds = 0;
+      updateDockTimerInputDisplay();
+      onDockTimerFinished();
+      return;
+    }
+    updateDockTimerInputDisplay();
+  }
+
   function startDockTimer() {
     if (isDockTimerRunning) return;
+    if (dockTimerSeconds <= 0) return;
+    if (dockTimerTargetSeconds <= 0) dockTimerTargetSeconds = dockTimerSeconds;
     isDockTimerRunning = true;
     const btn = document.getElementById('pt-dock-timer-toggle');
     if (btn) {
       btn.textContent = 'Pause';
       btn.classList.add('running');
     }
-    dockTimerInterval = setInterval(() => {
-      dockTimerSeconds++;
-      updateDockTimerInputDisplay();
-    }, 1000);
+    // Defensive: an orphaned interval would double the countdown rate.
+    if (dockTimerInterval) clearInterval(dockTimerInterval);
+    dockTimerInterval = setInterval(tickDockTimer, 1000);
   }
 
   function pauseDockTimer() {
@@ -65,8 +94,35 @@
 
   function resetDockTimer() {
     pauseDockTimer();
-    dockTimerSeconds = 0;
+    dockTimerSeconds = dockTimerTargetSeconds;
     updateDockTimerInputDisplay();
+  }
+
+  function getDockElapsedSeconds() {
+    if (dockTimerTargetSeconds <= 0) return 0;
+    return Math.max(0, dockTimerTargetSeconds - dockTimerSeconds);
+  }
+
+  // Ends the current solve session and hands back the elapsed seconds.
+  // Countdown semantics: elapsed = target - remaining, never the remaining value.
+  function consumeDockSolveTime() {
+    const elapsed = getDockElapsedSeconds();
+    pauseDockTimer();
+    dockTimerSeconds = 0;
+    dockTimerTargetSeconds = 0;
+    updateDockTimerInputDisplay();
+    return elapsed;
+  }
+
+  // Applies a free-text edit of the timer field. Focusing the field without
+  // changing it must not re-arm the countdown or discard elapsed progress.
+  function applyDockTimerInput(rawValue, valueAtFocus) {
+    if (valueAtFocus !== undefined && rawValue === valueAtFocus) return false;
+    const parsed = TrackerStorage.parseStringToSeconds(rawValue);
+    dockTimerSeconds = parsed;
+    dockTimerTargetSeconds = parsed;
+    if (parsed <= 0) pauseDockTimer();
+    return true;
   }
 
   function formatSolveTimeString(sec) {
@@ -94,7 +150,11 @@
 
     // 1. Google Calendar internal bitshift encoding:
     // dateKey = (year - 1970) * 512 + (month - 1) * 32 + day + 32
-    if (num >= 25000) {
+    // The floor is the key for 1990-01-01. It used to be 25000, which is roughly
+    // 2018-12; every earlier month fell through to the epoch-days branch below
+    // and decoded ~19 years into the future, so the quick-add button on those
+    // cells logged entries against the wrong date.
+    if (num >= (1990 - 1970) * 512) {
       const yearOffset = (num - 32) % 512;
       const year = Math.floor((num - 32 - yearOffset) / 512) + 1970;
       const day = yearOffset % 32;
@@ -172,6 +232,17 @@
     return null;
   }
 
+  // Entry text is user-supplied and is interpolated into innerHTML below, so a
+  // company name containing "<" or "&" would otherwise corrupt or inject markup.
+  function escapeHtml(str) {
+    return String(str === null || str === undefined ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function formatDateNice(dateStr) {
     if (!dateStr) return '';
     const parts = dateStr.split('-');
@@ -203,7 +274,17 @@
   // ---------------------------------------------------------------
   // Data
   // ---------------------------------------------------------------
-  async function refreshData() {
+  // Storage events, auth events and runtime messages can all land at once.
+  // Chain refreshes so two overlapping passes cannot finish out of order and
+  // paint the older snapshot over the newer one.
+  let refreshChain = Promise.resolve();
+
+  function refreshData() {
+    refreshChain = refreshChain.then(doRefreshData, doRefreshData);
+    return refreshChain;
+  }
+
+  async function doRefreshData() {
     [metrics, stats, allLogs] = await Promise.all([
       TrackerStorage.getMetrics(),
       TrackerStorage.getStats(),
@@ -568,22 +649,31 @@
           timerInput.blur();
         }
       });
+      timerInput.addEventListener('focus', () => {
+        dockTimerInputAtFocus = timerInput.value;
+      });
       timerInput.addEventListener('blur', () => {
-        const parsed = TrackerStorage.parseStringToSeconds(timerInput.value);
-        dockTimerSeconds = parsed;
-        updateDockTimerInputDisplay();
+        applyDockTimerInput(timerInput.value, dockTimerInputAtFocus);
+        dockTimerInputAtFocus = null;
+        timerInput.value = TrackerStorage.formatSecondsToMMSS(dockTimerSeconds);
       });
     }
 
-    window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' && isPanelOpen) {
-        const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
-        if (activeTag !== 'input' && activeTag !== 'textarea') {
-          e.preventDefault();
-          if (isDockTimerRunning) pauseDockTimer(); else startDockTimer();
+    // Bound once for the lifetime of the page: setupDockListeners runs again if
+    // the SPA ever tears the dock out of the DOM, and a second window listener
+    // would toggle the timer twice per keypress.
+    if (!isGlobalKeyHandlerBound) {
+      isGlobalKeyHandlerBound = true;
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && isPanelOpen && !document.querySelector('.pt-modal-backdrop')) {
+          const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+          if (activeTag !== 'input' && activeTag !== 'textarea') {
+            e.preventDefault();
+            if (isDockTimerRunning) pauseDockTimer(); else startDockTimer();
+          }
         }
-      }
-    });
+      });
+    }
 
     toggleBtn.addEventListener('click', () => {
       isPanelOpen = !isPanelOpen;
@@ -616,13 +706,16 @@
       const role = document.getElementById('pt-form-role').value;
       let notes = document.getElementById('pt-form-notes').value ? document.getElementById('pt-form-notes').value.trim() : '';
 
-      if (metricId === 'leetcode' && dockTimerSeconds > 0) {
-        const solveTimeStr = formatSolveTimeString(dockTimerSeconds);
-        notes = notes ? `${notes} (${solveTimeStr})` : solveTimeStr;
-        resetDockTimer();
+      let solveTimeSeconds = 0;
+      if (metricId === 'leetcode' && dockTimerTargetSeconds > 0) {
+        solveTimeSeconds = consumeDockSolveTime();
+        if (solveTimeSeconds > 0) {
+          const solveTimeStr = formatSolveTimeString(solveTimeSeconds);
+          notes = notes ? `${notes} (${solveTimeStr})` : solveTimeStr;
+        }
       }
 
-      await TrackerStorage.addLog({ metricId, count: 1, company, role, notes });
+      await TrackerStorage.addLog({ metricId, count: 1, company, role, notes, solveTimeSeconds });
 
       document.getElementById('pt-form-company').value = '';
       document.getElementById('pt-form-role').value = '';
@@ -808,11 +901,12 @@
         addBtn.textContent = '+1 ' + m.name + ' (' + todayC + ')';
         addBtn.addEventListener('click', async () => {
           let notes = undefined;
-          if (m.id === 'leetcode' && dockTimerSeconds > 0) {
-            notes = formatSolveTimeString(dockTimerSeconds);
-            resetDockTimer();
+          let solveTimeSeconds = 0;
+          if (m.id === 'leetcode' && dockTimerTargetSeconds > 0) {
+            solveTimeSeconds = consumeDockSolveTime();
+            if (solveTimeSeconds > 0) notes = formatSolveTimeString(solveTimeSeconds);
           }
-          await TrackerStorage.addLog({ metricId: m.id, count: 1, notes });
+          await TrackerStorage.addLog({ metricId: m.id, count: 1, notes, solveTimeSeconds });
           await refreshData();
         });
 
@@ -971,15 +1065,15 @@
         const time = formatTime(log.timestamp);
 
         entriesHTML += [
-          '<div class="pt-entry-item" data-id="' + log.id + '">',
-            '<div class="pt-entry-dot" style="background:' + m.color + '"></div>',
+          '<div class="pt-entry-item" data-id="' + escapeHtml(log.id) + '">',
+            '<div class="pt-entry-dot" style="background:' + escapeHtml(m.color) + '"></div>',
             '<div class="pt-entry-details">',
-              '<div class="pt-entry-main">' + mainText + '</div>',
-              sub ? '<div class="pt-entry-sub">' + sub + '</div>' : '',
-              notes ? '<div class="pt-entry-sub" style="font-style:italic;">' + notes + '</div>' : '',
-              '<div class="pt-entry-meta">' + m.name + ' &middot; ' + time + '</div>',
+              '<div class="pt-entry-main">' + escapeHtml(mainText) + '</div>',
+              sub ? '<div class="pt-entry-sub">' + escapeHtml(sub) + '</div>' : '',
+              notes ? '<div class="pt-entry-sub" style="font-style:italic;">' + escapeHtml(notes) + '</div>' : '',
+              '<div class="pt-entry-meta">' + escapeHtml(m.name) + ' &middot; ' + escapeHtml(time) + '</div>',
             '</div>',
-            '<button class="pt-delete-entry" data-id="' + log.id + '" title="Delete">&times;</button>',
+            '<button class="pt-delete-entry" data-id="' + escapeHtml(log.id) + '" title="Delete">&times;</button>',
           '</div>'
         ].join('');
       });
@@ -988,22 +1082,22 @@
     // Metric options
     let metricOptions = '';
     metrics.forEach(m => {
-      metricOptions += '<option value="' + m.id + '">' + m.name + '</option>';
+      metricOptions += '<option value="' + escapeHtml(m.id) + '">' + escapeHtml(m.name) + '</option>';
     });
 
     backdrop.innerHTML = [
       '<div class="pt-modal-dialog' + (currentTheme === 'dark' ? ' pt-dark' : '') + '">',
         '<div class="pt-modal-header">',
           '<div>',
-            '<div class="pt-modal-header-title">' + formatDateNice(dateStr) + '</div>',
-            '<div class="pt-modal-header-sub">' + summaryText + '</div>',
+            '<div class="pt-modal-header-title">' + escapeHtml(formatDateNice(dateStr)) + '</div>',
+            '<div class="pt-modal-header-sub">' + escapeHtml(summaryText) + '</div>',
           '</div>',
           '<button class="pt-close-btn" id="pt-modal-close">&times;</button>',
         '</div>',
         '<div class="pt-modal-body">',
           '<div id="pt-modal-entries">' + entriesHTML + '</div>',
           '<div class="pt-modal-form">',
-            '<label>Add entry for ' + dateStr + '</label>',
+            '<label>Add entry for ' + escapeHtml(dateStr) + '</label>',
             '<select id="pt-modal-metric">' + metricOptions + '</select>',
             '<div class="pt-modal-form-row">',
               '<input type="text" id="pt-modal-company" placeholder="Company or title" />',

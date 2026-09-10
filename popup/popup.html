@@ -14,8 +14,8 @@
         <span class="brand-title">PulseTracker</span>
       </div>
       <div class="header-right">
-        <button id="theme-toggle-btn" class="theme-toggle-btn" type="button" title="Toggle theme">Dark</button>
-        <span class="streak-pill" id="streak-pill">
+        <button id="theme-toggle-btn" class="theme-toggle-btn" type="button" title="Toggle theme" aria-label="Toggle light and dark theme">Dark</button>
+        <span class="streak-pill" id="streak-pill" title="Consecutive days with at least one entry">
           <span id="streak-count">0</span>-day streak
         </span>
       </div>
@@ -26,18 +26,21 @@
       <div class="account-info hidden" id="account-info">
         <div class="account-badge" id="account-badge">G</div>
         <span class="account-email" id="account-email">user@gmail.com</span>
-        <button class="account-signout-btn" id="account-signout-btn" title="Sign Out">Sign Out</button>
+        <button class="account-signout-btn" id="account-signout-btn" type="button" title="Sign Out">Sign Out</button>
       </div>
-      <button class="account-signin-btn" id="account-signin-btn">
+      <button class="account-signin-btn" id="account-signin-btn" type="button">
         Sign In with Google
       </button>
     </div>
 
     <div class="date-row" id="current-date-text"></div>
 
+    <!-- Inline status / error line (announced to screen readers) -->
+    <div class="status-line timer-hint hidden" id="status-line" role="status" aria-live="polite"></div>
+
     <div class="tabs-bar">
       <div id="metric-tabs" class="tabs-scroll"></div>
-      <button id="add-metric-tab-btn" class="tab-add-btn" title="Add tracker">+</button>
+      <button id="add-metric-tab-btn" class="tab-add-btn" type="button" title="Add tracker" aria-label="Add a new tracker">+</button>
     </div>
 
     <div class="counter-card">
@@ -46,11 +49,19 @@
         <span id="metric-unit-label" class="counter-label">applied today</span>
       </div>
       <div class="action-buttons">
-        <button id="quick-add-btn" class="btn-primary">
+        <button id="quick-add-btn" class="btn-primary" type="button">
           <span id="quick-add-label">+1 Applied</span>
         </button>
-        <button id="undo-btn" class="btn-secondary" title="Undo">-1</button>
+        <button id="undo-btn" class="btn-secondary" type="button" title="Undo" aria-label="Remove the most recent entry logged today">-1</button>
       </div>
+    </div>
+
+    <!-- First-run guidance (only visible when the user has no data at all) -->
+    <div class="goal-meter first-run-card hidden" id="first-run-card">
+      <div class="goal-header">
+        <span class="goal-status">Welcome. Nothing logged yet.</span>
+      </div>
+      <div class="timer-hint" id="first-run-tips"></div>
     </div>
 
     <!-- LeetCode Solve Timer (active on LeetCode tab) -->
@@ -70,10 +81,34 @@
       </div>
     </div>
 
+    <!-- Cumulative LeetCode Solve Time (active on LeetCode tab) -->
+    <div id="leetcode-time-stats" class="summary-stats hidden">
+      <div class="stat-item">
+        <span class="stat-value" id="lc-today-time">0m</span>
+        <span class="stat-name">Today</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value" id="lc-total-time">0m</span>
+        <span class="stat-name">All Time</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value" id="lc-avg-time">0m</span>
+        <span class="stat-name">Avg / Problem</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <span class="stat-value" id="lc-best-time">0m</span>
+        <span class="stat-name">Fastest</span>
+      </div>
+    </div>
+    <div class="timer-hint hidden" id="leetcode-time-note"></div>
+
     <!-- Daily Goal Progress Meter -->
     <div class="goal-meter" id="goal-meter">
       <div class="goal-header">
-        <span class="goal-label">Daily Goal: <strong id="goal-target-num" title="Click to edit daily goal">5</strong></span>
+        <span class="goal-label">Daily Goal: <strong id="goal-target-num" role="button" tabindex="0" title="Open tracker settings (daily goal)">5</strong></span>
         <span class="goal-status" id="goal-status-text">0 / 5</span>
       </div>
       <div class="goal-bar-wrap">
@@ -82,14 +117,14 @@
     </div>
 
     <div class="details-section">
-      <button id="toggle-details-btn" class="details-toggle">
+      <button id="toggle-details-btn" class="details-toggle" type="button" aria-expanded="false" aria-controls="details-form">
         <span>+ Add details (company, role, notes)</span>
         <span id="details-arrow" class="arrow-down"></span>
       </button>
       <form id="details-form" class="details-form hidden">
-        <input type="text" id="detail-company" placeholder="Company or problem name" />
-        <input type="text" id="detail-role" placeholder="Role or tag" />
-        <input type="text" id="detail-notes" placeholder="Notes or URL" />
+        <input type="text" id="detail-company" placeholder="Company or problem name" aria-label="Company or problem name" />
+        <input type="text" id="detail-role" placeholder="Role or tag" aria-label="Role or tag" />
+        <input type="text" id="detail-notes" placeholder="Notes or URL" aria-label="Notes or URL" />
         <div class="form-actions">
           <button type="submit" class="btn-sm-primary">Save Entry</button>
         </div>
@@ -113,9 +148,27 @@
       </div>
     </div>
 
+    <!-- Entry History Section -->
+    <div class="activity-section">
+      <button id="toggle-entries-btn" class="activity-toggle" type="button" aria-expanded="true" aria-controls="entries-panel">
+        <span id="entries-title">Recent Entries</span>
+        <span id="entries-arrow" class="arrow-down open"></span>
+      </button>
+      <div id="entries-panel" class="activity-panel">
+        <div class="tabs-scroll entries-range-bar" id="entries-range-bar" role="group" aria-label="History range">
+          <button type="button" class="tab-item active" data-range="today">Today</button>
+          <button type="button" class="tab-item" data-range="week">7 Days</button>
+          <button type="button" class="tab-item" data-range="month">30 Days</button>
+          <button type="button" class="tab-item" data-range="all">All Time</button>
+        </div>
+        <div id="entries-list" class="entries-list"></div>
+        <div class="timer-hint" id="entries-footnote"></div>
+      </div>
+    </div>
+
     <!-- 30-Day Activity Summary Section -->
     <div class="activity-section">
-      <button id="toggle-activity-btn" class="activity-toggle">
+      <button id="toggle-activity-btn" class="activity-toggle" type="button" aria-expanded="false" aria-controls="activity-panel">
         <span id="activity-title">30-Day Activity</span>
         <span id="activity-arrow" class="arrow-down"></span>
       </button>
@@ -131,9 +184,13 @@
     </div>
 
     <footer class="footer">
-      <button id="open-calendar-btn" class="calendar-btn">
+      <button id="open-calendar-btn" class="calendar-btn" type="button">
         View on Google Calendar
       </button>
+      <div class="modal-actions export-row">
+        <button id="export-csv-btn" class="btn-cancel" type="button" title="Download your full history as a CSV file">Export CSV</button>
+        <button id="export-json-btn" class="btn-cancel" type="button" title="Download your full history as a JSON file">Export JSON</button>
+      </div>
     </footer>
 
     <!-- New metric modal -->
@@ -141,7 +198,7 @@
       <div class="modal-content">
         <div class="modal-header">
           <h3>Add New Tracker</h3>
-          <button id="close-metric-modal" class="close-btn">&times;</button>
+          <button id="close-metric-modal" class="close-btn" type="button" aria-label="Close add tracker dialog">&times;</button>
         </div>
         <form id="new-metric-form">
           <div class="form-group">
@@ -170,6 +227,66 @@
           <div class="modal-actions">
             <button type="button" id="cancel-metric-btn" class="btn-cancel">Cancel</button>
             <button type="submit" class="btn-submit">Add Tracker</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Tracker settings modal (daily goal, remove tracker) -->
+    <div id="metric-settings-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="metric-settings-title">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="metric-settings-title">Tracker Settings</h3>
+          <button id="close-settings-modal" class="close-btn" type="button" aria-label="Close tracker settings dialog">&times;</button>
+        </div>
+        <form id="metric-settings-form">
+          <div class="form-group">
+            <label for="metric-settings-goal">Daily Goal</label>
+            <input type="number" id="metric-settings-goal" min="1" step="1" value="5" required />
+          </div>
+          <div class="form-group">
+            <span class="timer-hint" id="metric-settings-hint"></span>
+          </div>
+          <div class="modal-actions">
+            <button type="button" id="delete-metric-btn" class="account-signout-btn danger-left hidden">Delete tracker</button>
+            <button type="button" id="cancel-settings-btn" class="btn-cancel">Cancel</button>
+            <button type="submit" class="btn-submit">Save Goal</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Edit entry modal -->
+    <div id="edit-entry-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="edit-entry-title">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="edit-entry-title">Edit Entry</h3>
+          <button id="close-edit-entry-modal" class="close-btn" type="button" aria-label="Close edit entry dialog">&times;</button>
+        </div>
+        <form id="edit-entry-form">
+          <div class="form-group">
+            <span class="timer-hint" id="edit-entry-context"></span>
+          </div>
+          <div class="form-group">
+            <label for="edit-entry-company">Company or problem name</label>
+            <input type="text" id="edit-entry-company" placeholder="Company or problem name" />
+          </div>
+          <div class="form-group">
+            <label for="edit-entry-role">Role or tag</label>
+            <input type="text" id="edit-entry-role" placeholder="Role or tag" />
+          </div>
+          <div class="form-group">
+            <label for="edit-entry-notes">Notes or URL</label>
+            <input type="text" id="edit-entry-notes" placeholder="Notes or URL" />
+          </div>
+          <div class="form-group hidden" id="edit-entry-time-group">
+            <label for="edit-entry-time">Solve time (mm:ss)</label>
+            <input type="text" id="edit-entry-time" placeholder="00:00" spellcheck="false" autocomplete="off" />
+          </div>
+          <div class="modal-actions">
+            <button type="button" id="delete-entry-btn" class="account-signout-btn danger-left">Delete entry</button>
+            <button type="button" id="cancel-edit-entry-btn" class="btn-cancel">Cancel</button>
+            <button type="submit" class="btn-submit">Save Changes</button>
           </div>
         </form>
       </div>

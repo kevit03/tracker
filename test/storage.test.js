@@ -268,6 +268,24 @@ async function run() {
     assert.strictEqual(TrackerStorage.parseStringToSeconds(''), 0);
     assert.strictEqual(TrackerStorage.parseStringToSeconds(null), 0);
 
+    // Cumulative LeetCode time helpers
+    assert.strictEqual(TrackerStorage.formatTimeHMS(45), '45s');
+    assert.strictEqual(TrackerStorage.formatTimeHMS(120), '2m');
+    assert.strictEqual(TrackerStorage.formatTimeHMS(150), '2m 30s');
+    assert.strictEqual(TrackerStorage.formatTimeHMS(3660), '1h 1m');
+
+    // getLeetcodeTimeStats
+    await TrackerStorage.addLog({ metricId: 'leetcode', count: 1, solveTimeSeconds: 1500 });
+    await TrackerStorage.addLog({ metricId: 'leetcode', count: 1, solveTimeSeconds: 900 });
+    await TrackerStorage.addLog({ metricId: 'jobs', count: 1 });
+
+    const stats = await TrackerStorage.getLeetcodeTimeStats();
+    assert.strictEqual(stats.totalSeconds, 2400);
+    assert.strictEqual(stats.todaySeconds, 2400);
+    assert.strictEqual(stats.sessionCount, 2);
+    assert.strictEqual(stats.todaySessionCount, 2);
+    assert.strictEqual(stats.avgSeconds, 1200);
+
     console.log('[PASS] Theme storage persistence and LeetCode time helpers');
     delete global.TrackerAuth;
     delete global.TrackerStorage;
