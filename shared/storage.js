@@ -681,6 +681,16 @@ const TrackerStorage = (() => {
       });
     },
 
+    // Timer records sit deliberately outside onChanged's key filter: a
+    // countdown transition must not drag a full overlay re-render with it.
+    onTimerChanged(key, cb) {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+        chrome.storage.onChanged.addListener((changes, area) => {
+          if (area === 'local' && changes[key]) cb(changes[key].newValue);
+        });
+      }
+    },
+
     onChanged(cb) {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {

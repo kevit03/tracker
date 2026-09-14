@@ -92,6 +92,139 @@ async function run() {
     uninstallMockChrome();
   }
 
+  // 3b. A stale cached token (401 from userinfo) is evicted and re-requested
+  {
+    const { mock, TrackerAuth } = getFreshAuth();
+    const originalFetch = global.fetch;
+    const seenTokens = [];
+    global.fetch = async (url, opts) => {
+      const token = opts.headers.Authorization.replace('Bearer ', '');
+      seenTokens.push(token);
+      if (token === 'stale-token-1') return { ok: false, status: 401 };
+      return { ok: true, status: 200, json: async () => ({ email: 'bob@gmail.com', name: 'Bob' }) };
+    };
+
+    try {
+      mock.identity.tokenToReturn = 'stale-token-1';
+      // The second getAuthToken call must hand back a fresh token.
+      const originalGet = mock.identity.getAuthToken.bind(mock.identity);
+      let calls = 0;
+      mock.identity.getAuthToken = (details, cb) => {
+        calls++;
+        if (calls === 2) mock.identity.tokenToReturn = 'fresh-token-2';
+        return originalGet(details, cb);
+      };
+
+      const user = await TrackerAuth.signInWithGoogle();
+      assert.deepStrictEqual(seenTokens, ['stale-token-1', 'fresh-token-2'], 'Must validate the stale token, then the fresh one');
+      assert.strictEqual(user.token, 'fresh-token-2', 'User must carry the fresh token');
+      assert.strictEqual(mock.identity.cachedTokens.has('stale-token-1'), false, 'Stale token must be evicted from the cache');
+      assert.strictEqual(calls, 2, 'Exactly one interactive re-prompt after a 401');
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    console.log('[PASS] Stale cached OAuth token is evicted and refreshed');
+    delete global.TrackerAuth;
+    uninstallMockChrome();
+  }
+
+  // 3c. ensureValidSession refreshes an expired stored session
+  {
+    const { mock, TrackerAuth } = getFreshAuth();
+    await TrackerAuth.setUser({ email: 'carol@gmail.com', name: 'Carol', token: 'expired-token', provider: 'google' });
+
+    const originalFetch = global.fetch;
+    global.fetch = async (url, opts) => {
+      const token = opts.headers.Authorization.replace('Bearer ', '');
+      if (token === 'expired-token') return { ok: false, status: 401 };
+      return { ok: true, status: 200, json: async () => ({ email: 'carol@gmail.com', name: 'Carol Jones' }) };
+    };
+
+    try {
+      mock.identity.tokenToReturn = 'renewed-token';
+      const user = await TrackerAuth.ensureValidSession();
+      assert.strictEqual(user.token, 'renewed-token', 'Session must be renewed with the fresh token');
+      assert.strictEqual(user.name, 'Carol Jones', 'Profile must be refreshed alongside the token');
+      assert.strictEqual(user.sessionExpired, undefined);
+      assert.strictEqual(mock.identity.cachedTokens.has('expired-token'), false, 'Expired token must be evicted');
+      const stored = await TrackerAuth.getCurrentUser();
+      assert.strictEqual(stored.token, 'renewed-token', 'Renewed session must be persisted');
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    console.log('[PASS] ensureValidSession renews an expired OAuth session');
+    delete global.TrackerAuth;
+    uninstallMockChrome();
+  }
+
+  // 3d. ensureValidSession keeps the account but drops a dead token when
+  //     the user declines to re-authenticate
+  {
+    const { mock, TrackerAuth } = getFreshAuth();
+    await TrackerAuth.setUser({ email: 'dave@gmail.com', name: 'Dave', token: 'dead-token', provider: 'google' });
+
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({ ok: false, status: 401 });
+    try {
+      mock.identity.shouldFail = true;
+      mock.identity.failureMessage = 'The user did not approve access.';
+      const user = await TrackerAuth.ensureValidSession();
+      assert.strictEqual(user.email, 'dave@gmail.com', 'Account must survive a declined re-auth');
+      assert.strictEqual(user.token, undefined, 'Dead token must not be kept');
+      assert.strictEqual(user.sessionExpired, true, 'UI must be told the session expired');
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    console.log('[PASS] Declined re-auth keeps the account and drops the dead token');
+    delete global.TrackerAuth;
+    uninstallMockChrome();
+  }
+
+  // 3e. Network failure is not expiry: the session is left untouched
+  {
+    const { TrackerAuth } = getFreshAuth();
+    const original = { email: 'erin@gmail.com', name: 'Erin', token: 'fine-token', provider: 'google' };
+    await TrackerAuth.setUser(original);
+
+    const originalFetch = global.fetch;
+    global.fetch = async () => { throw new TypeError('Failed to fetch'); };
+    try {
+      const user = await TrackerAuth.ensureValidSession();
+      assert.strictEqual(user.token, 'fine-token', 'Offline must not evict a token');
+      assert.strictEqual(user.sessionExpired, undefined);
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    console.log('[PASS] Offline validation leaves the session untouched');
+    delete global.TrackerAuth;
+    uninstallMockChrome();
+  }
+
+  // 3f. Unpaired build: allowPrompt:false surfaces EMAIL_REQUIRED instead of
+  //     window.prompt, and an explicit email skips Identity entirely
+  {
+    const { mock, TrackerAuth } = getFreshAuth();
+    mock.identity.shouldFail = true;
+    mock.identity.failureMessage = 'OAuth2 not granted or revoked.';
+
+    await assert.rejects(
+      () => TrackerAuth.signInWithGoogle(undefined, { allowPrompt: false }),
+      err => err.code === 'EMAIL_REQUIRED'
+    );
+
+    const user = await TrackerAuth.signInWithGoogle('Frank@Example.com');
+    assert.strictEqual(user.email, 'frank@example.com');
+    assert.strictEqual(mock.identity.cachedTokens.size, 0, 'An explicit email must not trigger an Identity prompt');
+
+    console.log('[PASS] Unpaired build surfaces EMAIL_REQUIRED and honors explicit email');
+    delete global.TrackerAuth;
+    uninstallMockChrome();
+  }
+
   // 4. Sign Out and Token Eviction
   {
     const { mock, TrackerAuth } = getFreshAuth();

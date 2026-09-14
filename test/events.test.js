@@ -85,6 +85,51 @@ async function run() {
     uninstallMockChrome();
   }
 
+  // 3. Sign-in and sign-out reach the single storage listener.
+  //    The content script used to register three overlapping listeners
+  //    (TrackerStorage.onChanged, TrackerAuth.onAuthChanged, and a raw
+  //    chrome.storage.onChanged), so one log write re-rendered the whole
+  //    overlay twice. Only the storage listener remains, and it must still
+  //    cover auth transitions.
+  {
+    const { TrackerStorage, TrackerAuth } = getFreshModules();
+
+    const authChanges = [];
+    TrackerStorage.onChanged(changes => {
+      if (changes.pt_auth_user) authChanges.push(changes.pt_auth_user);
+    });
+
+    await TrackerAuth.setUser({ email: 'Alice@Example.com', name: 'Alice' });
+    await new Promise(r => setTimeout(r, 20));
+    assert.strictEqual(authChanges.length, 1, 'Sign-in must reach TrackerStorage.onChanged');
+    assert.strictEqual(authChanges[0].newValue.email, 'alice@example.com');
+
+    await TrackerAuth.signOut();
+    await new Promise(r => setTimeout(r, 20));
+    assert.strictEqual(authChanges.length, 2, 'Sign-out must reach TrackerStorage.onChanged');
+    assert.strictEqual(authChanges[1].newValue, null);
+
+    console.log('[PASS] Auth transitions reach the storage change listener');
+    uninstallMockChrome();
+  }
+
+  // 4. Regression pin: the content script must not re-introduce a second raw
+  //    chrome.storage.onChanged listener alongside TrackerStorage.onChanged.
+  {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.resolve(__dirname, '../content/content.js'), 'utf8');
+    const rawListeners = (source.match(/chrome\.storage\.onChanged\.addListener/g) || []).length;
+    assert.strictEqual(
+      rawListeners,
+      0,
+      'content/content.js should subscribe through TrackerStorage.onChanged only, found ' +
+      rawListeners + ' raw chrome.storage.onChanged listener(s)'
+    );
+
+    console.log('[PASS] Content script registers a single storage change listener');
+  }
+
   console.log('--- test/events.test.js COMPLETED SUCCESSFULLY ---\n');
 }
 

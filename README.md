@@ -28,6 +28,13 @@ A Google Chrome extension to track daily job applications, LeetCode problems, an
 - **Multi-Format Date Extraction** 
 - **Layer Stacking & Positioning**
 
+### Auto-Tracking Engine
+- **Plugin adapters**: one declarative `PlatformAdapter` per site (`content/adapters/`), registered with `shared/auto-tracker-core.js`. A new platform is a `matches(url)` plus an `init(onSuccess)` that returns its own teardown; ATS adapters are ~15 lines on top of `adapters/ats/confirmation.js`.
+- **Supported today**: LeetCode (Accepted submission), NeetCode (IDE pass, roadmap/practice checkbox), Greenhouse, Lever, Ashby, Workday (application confirmation).
+- **Zero polling**: no `setInterval`. Detection is armed by the user's own submit action, then a scoped `MutationObserver` watches only nodes added afterwards and disconnects on the first verdict. SPA navigation is tracked through the Navigation API, `popstate`, and `history` wrappers; adapters are remounted only when their route key changes.
+- **Deduplication**: `<platform>:<slug>:<YYYY-MM-DD>` keys in a TTL/LRU cache mirrored to `chrome.storage.session` (local fallback), so refreshes, re-submits, and sibling tabs cannot double count. NeetCode shares LeetCode's namespace, so ticking a problem you already solved on LeetCode does not count twice.
+- **Toast**: `PulseTracker: Logged Two Sum (+1)` rendered inside a closed Shadow DOM so host page CSS cannot touch it.
+
 ### Automated Testing & Verification
 - **Test Runner**: Native Node.js test framework (`node test/run_all.js`)
 - **In-Memory Harness**: Fully custom mock environment (`test/mock_chrome.js`) simulating Chrome Manifest V3 APIs without requiring heavy browser binaries

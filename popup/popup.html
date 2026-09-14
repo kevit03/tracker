@@ -22,14 +22,20 @@
     </header>
 
     <!-- Google Account Bar -->
-    <div class="account-bar" id="account-bar">
+    <!-- Google Account: glass card. Signed-out shows the Google pill, signed-in
+         shows avatar, email pill, and a quiet sign-out link. -->
+    <div class="glass-card account-card" id="account-bar">
       <div class="account-info hidden" id="account-info">
-        <div class="account-badge" id="account-badge">G</div>
-        <span class="account-email" id="account-email">user@gmail.com</span>
-        <button class="account-signout-btn" id="account-signout-btn" type="button" title="Sign Out">Sign Out</button>
+        <div class="account-avatar" id="account-badge" aria-hidden="true">G</div>
+        <div class="account-meta">
+          <span class="account-email" id="account-email">user@gmail.com</span>
+          <span class="account-sub" id="account-sub">Google Account</span>
+        </div>
+        <button class="account-signout-btn" id="account-signout-btn" type="button" aria-label="Sign out of this Google Account">Sign out</button>
       </div>
-      <button class="account-signin-btn" id="account-signin-btn" type="button">
-        Sign In with Google
+      <button class="google-btn" id="account-signin-btn" type="button">
+        <span class="google-btn-icon" aria-hidden="true"><svg viewBox="0 0 48 48" width="16" height="16" aria-hidden="true" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg></span>
+        <span class="google-btn-label">Continue with Google</span>
       </button>
     </div>
 
@@ -49,8 +55,11 @@
         <span id="metric-unit-label" class="counter-label">applied today</span>
       </div>
       <div class="action-buttons">
-        <button id="quick-add-btn" class="btn-primary" type="button">
-          <span id="quick-add-label">+1 Applied</span>
+        <button id="quick-add-btn" class="btn-primary flow-btn" type="button">
+          <span class="flow-btn-circle" aria-hidden="true"></span>
+          <span class="flow-btn-arrow flow-btn-arrow-in" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+          <span id="quick-add-label" class="flow-btn-label">+1 Applied</span>
+          <span class="flow-btn-arrow flow-btn-arrow-out" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
         </button>
         <button id="undo-btn" class="btn-secondary" type="button" title="Undo" aria-label="Remove the most recent entry logged today">-1</button>
       </div>
@@ -287,6 +296,30 @@
             <button type="button" id="delete-entry-btn" class="account-signout-btn danger-left">Delete entry</button>
             <button type="button" id="cancel-edit-entry-btn" class="btn-cancel">Cancel</button>
             <button type="submit" class="btn-submit">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Direct email sign-in for unpacked builds with no GCP OAuth client paired -->
+    <div id="email-signin-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="email-signin-title">
+      <div class="modal-content glass-card">
+        <div class="modal-header">
+          <h3 id="email-signin-title">Sign in with your Google email</h3>
+          <button id="close-email-signin-modal" class="close-btn" type="button" aria-label="Close sign-in dialog">&times;</button>
+        </div>
+        <p class="modal-note">This unpacked build is not linked to a Google Cloud OAuth client yet. Enter the Google Account email you want your entries scoped to; each account keeps its own counts.</p>
+        <form id="email-signin-form">
+          <div class="form-group">
+            <label for="email-signin-input">Google Account email</label>
+            <input type="email" id="email-signin-input" placeholder="you@gmail.com" autocomplete="email" spellcheck="false" required />
+          </div>
+          <div class="modal-actions">
+            <button type="button" id="cancel-email-signin-btn" class="btn-cancel">Cancel</button>
+            <button type="submit" class="btn-submit google-btn google-btn-compact">
+              <span class="google-btn-icon" aria-hidden="true"><svg viewBox="0 0 48 48" width="16" height="16" aria-hidden="true" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg></span>
+              <span class="google-btn-label">Continue</span>
+            </button>
           </div>
         </form>
       </div>

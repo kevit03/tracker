@@ -10,12 +10,36 @@
   let currentTheme = 'light';
 
   // LeetCode Dock Timer State
-  let dockTimerSeconds = 0;
+  //
+  // Persisted as a DEADLINE under DOCK_TIMER_KEY, never as a decrementing
+  // counter. A counter dies with the page on reload or SPA teardown, and Chrome
+  // throttles interval callbacks to roughly one per minute once the Calendar
+  // tab is backgrounded, so a counted-down value drifts badly. Remaining time
+  // is therefore always derived from the clock.
+  // background/service-worker.js watches this same key and mirrors it into
+  // chrome.alarms so zero is announced even with every page closed.
+  //
+  // Deliberately independent of the popup timer ('pt_timer_popup'): the two
+  // records never share state and never sync to each other.
+  const DOCK_TIMER_KEY = 'pt_timer_dock';
+
   let dockTimerTargetSeconds = 0;
+  let dockTimerEndsAt = null;
+  let dockTimerRemaining = 0;
+  let dockTimerFinishedAt = null;
   let dockTimerInterval = null;
   let isDockTimerRunning = false;
   let dockTimerInputAtFocus = null;
   let isGlobalKeyHandlerBound = false;
+  // Set while applying a record that came FROM storage, so echoing it back
+  // cannot loop.
+  let isApplyingStoredDockTimer = false;
+  // Timestamp of our own most recent write, so the change event it triggers is
+  // not mistaken for another tab's update and used to rebuild our interval.
+  let lastPersistedDockTimerAt = 0;
+
+  // Injectable so the countdown can be driven headlessly in tests.
+  let nowMs = () => Date.now();
 
   function applyTheme(theme) {
     currentTheme = theme === 'dark' ? 'dark' : 'light';
@@ -32,33 +56,122 @@
     });
   }
 
+  // Remaining time is derived, never accumulated: a missed or throttled tick
+  // costs a stale pixel, not a wrong countdown.
+  function getDockRemainingSeconds() {
+    if (isDockTimerRunning && dockTimerEndsAt) {
+      return Math.max(0, Math.round((dockTimerEndsAt - nowMs()) / 1000));
+    }
+    return Math.max(0, dockTimerRemaining);
+  }
+
+  function dockTimerRecord() {
+    let status = 'idle';
+    if (isDockTimerRunning) status = 'running';
+    else if (dockTimerFinishedAt) status = 'finished';
+    else if (dockTimerRemaining > 0 && dockTimerRemaining < dockTimerTargetSeconds) status = 'paused';
+    return {
+      status: status,
+      targetSeconds: dockTimerTargetSeconds,
+      endsAt: isDockTimerRunning ? dockTimerEndsAt : null,
+      remainingSeconds: isDockTimerRunning ? getDockRemainingSeconds() : dockTimerRemaining,
+      finishedAt: dockTimerFinishedAt,
+      updatedAt: nowMs()
+    };
+  }
+
+  // Writing the record is what arms or cancels the background alarm; the
+  // service worker watches this key and needs no message from here. Fire and
+  // forget so the timer controls stay synchronous.
+  function persistDockTimer() {
+    if (isApplyingStoredDockTimer) return;
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+    try {
+      const record = dockTimerRecord();
+      lastPersistedDockTimerAt = record.updatedAt;
+      chrome.storage.local.set({ [DOCK_TIMER_KEY]: record }, () => {
+        if (chrome.runtime && chrome.runtime.lastError) return;
+      });
+    } catch (err) {
+      // A torn-down extension context must not break the dock.
+    }
+  }
+
+  function applyStoredDockTimer(raw) {
+    if (!raw || typeof raw !== 'object' || !raw.status) return false;
+    isApplyingStoredDockTimer = true;
+    dockTimerTargetSeconds = Math.max(0, parseInt(raw.targetSeconds, 10) || 0);
+    dockTimerRemaining = Math.max(0, parseInt(raw.remainingSeconds, 10) || 0);
+    dockTimerFinishedAt = Number.isFinite(raw.finishedAt) ? raw.finishedAt : null;
+    dockTimerEndsAt = Number.isFinite(raw.endsAt) ? raw.endsAt : null;
+
+    if (dockTimerInterval) {
+      clearInterval(dockTimerInterval);
+      dockTimerInterval = null;
+    }
+    isDockTimerRunning = false;
+
+    if (raw.status === 'running' && dockTimerEndsAt) {
+      if (dockTimerEndsAt > nowMs()) {
+        isDockTimerRunning = true;
+        dockTimerInterval = setInterval(tickDockTimer, 250);
+      } else {
+        // The countdown ran out while this page was closed or asleep.
+        dockTimerRemaining = 0;
+        dockTimerFinishedAt = dockTimerEndsAt;
+        dockTimerEndsAt = null;
+      }
+    }
+    isApplyingStoredDockTimer = false;
+    syncDockTimerControls();
+    return true;
+  }
+
+  // Recovers whatever the countdown did while this page was gone.
+  function hydrateDockTimer() {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+    try {
+      chrome.storage.local.get([DOCK_TIMER_KEY], result => {
+        if (chrome.runtime && chrome.runtime.lastError) return;
+        applyStoredDockTimer(result && result[DOCK_TIMER_KEY]);
+      });
+    } catch (err) {
+      // Extension context invalidated; leave the dock timer idle.
+    }
+  }
+
+  function syncDockTimerControls() {
+    const btn = document.getElementById('pt-dock-timer-toggle');
+    if (btn) {
+      btn.textContent = isDockTimerRunning ? 'Pause' : 'Start';
+      btn.classList.toggle('running', isDockTimerRunning);
+    }
+    updateDockTimerInputDisplay();
+  }
+
   function updateDockTimerInputDisplay() {
     const inp = document.getElementById('pt-dock-timer-input');
     if (inp && document.activeElement !== inp) {
-      inp.value = TrackerStorage.formatSecondsToMMSS(dockTimerSeconds);
+      inp.value = TrackerStorage.formatSecondsToMMSS(getDockRemainingSeconds());
+    }
+    if (inp) {
+      inp.classList.toggle('pt-timer-expired', dockTimerFinishedAt !== null);
     }
   }
 
   function onDockTimerFinished() {
+    dockTimerFinishedAt = dockTimerEndsAt || nowMs();
+    dockTimerRemaining = 0;
     pauseDockTimer();
-    const inp = document.getElementById('pt-dock-timer-input');
-    if (inp) {
-      inp.style.borderColor = '#d93025';
-      inp.style.boxShadow = '0 0 0 2px rgba(217,48,37,0.2)';
-      setTimeout(() => {
-        inp.style.borderColor = '';
-        inp.style.boxShadow = '';
-      }, 2000);
-    }
   }
 
+  // Repaint tick. Correctness lives in the deadline, so this only decides when
+  // to redraw and when the deadline has passed.
   function tickDockTimer() {
-    dockTimerSeconds--;
-    // Never let the countdown run past zero, even if the target was edited mid-run.
-    if (dockTimerSeconds <= 0) {
-      dockTimerSeconds = 0;
-      updateDockTimerInputDisplay();
+    if (!isDockTimerRunning) return;
+    if (getDockRemainingSeconds() <= 0) {
       onDockTimerFinished();
+      updateDockTimerInputDisplay();
       return;
     }
     updateDockTimerInputDisplay();
@@ -66,41 +179,45 @@
 
   function startDockTimer() {
     if (isDockTimerRunning) return;
-    if (dockTimerSeconds <= 0) return;
-    if (dockTimerTargetSeconds <= 0) dockTimerTargetSeconds = dockTimerSeconds;
+    const remaining = getDockRemainingSeconds();
+    if (remaining <= 0) return;
+    if (dockTimerTargetSeconds <= 0) dockTimerTargetSeconds = remaining;
+    dockTimerFinishedAt = null;
     isDockTimerRunning = true;
-    const btn = document.getElementById('pt-dock-timer-toggle');
-    if (btn) {
-      btn.textContent = 'Pause';
-      btn.classList.add('running');
-    }
-    // Defensive: an orphaned interval would double the countdown rate.
+    dockTimerEndsAt = nowMs() + remaining * 1000;
+    dockTimerRemaining = remaining;
+    // Defensive: an orphaned interval would double the repaint rate.
     if (dockTimerInterval) clearInterval(dockTimerInterval);
-    dockTimerInterval = setInterval(tickDockTimer, 1000);
+    dockTimerInterval = setInterval(tickDockTimer, 250);
+    syncDockTimerControls();
+    persistDockTimer();
   }
 
   function pauseDockTimer() {
+    const wasRunning = isDockTimerRunning;
+    if (wasRunning) dockTimerRemaining = getDockRemainingSeconds();
     isDockTimerRunning = false;
-    const btn = document.getElementById('pt-dock-timer-toggle');
-    if (btn) {
-      btn.textContent = 'Start';
-      btn.classList.remove('running');
-    }
+    dockTimerEndsAt = null;
     if (dockTimerInterval) {
       clearInterval(dockTimerInterval);
       dockTimerInterval = null;
     }
+    syncDockTimerControls();
+    if (wasRunning) persistDockTimer();
   }
 
   function resetDockTimer() {
     pauseDockTimer();
-    dockTimerSeconds = dockTimerTargetSeconds;
-    updateDockTimerInputDisplay();
+    dockTimerFinishedAt = null;
+    dockTimerRemaining = dockTimerTargetSeconds;
+    dockTimerEndsAt = null;
+    syncDockTimerControls();
+    persistDockTimer();
   }
 
   function getDockElapsedSeconds() {
     if (dockTimerTargetSeconds <= 0) return 0;
-    return Math.max(0, dockTimerTargetSeconds - dockTimerSeconds);
+    return Math.max(0, dockTimerTargetSeconds - getDockRemainingSeconds());
   }
 
   // Ends the current solve session and hands back the elapsed seconds.
@@ -108,9 +225,12 @@
   function consumeDockSolveTime() {
     const elapsed = getDockElapsedSeconds();
     pauseDockTimer();
-    dockTimerSeconds = 0;
+    dockTimerRemaining = 0;
     dockTimerTargetSeconds = 0;
-    updateDockTimerInputDisplay();
+    dockTimerEndsAt = null;
+    dockTimerFinishedAt = null;
+    syncDockTimerControls();
+    persistDockTimer();
     return elapsed;
   }
 
@@ -119,9 +239,13 @@
   function applyDockTimerInput(rawValue, valueAtFocus) {
     if (valueAtFocus !== undefined && rawValue === valueAtFocus) return false;
     const parsed = TrackerStorage.parseStringToSeconds(rawValue);
-    dockTimerSeconds = parsed;
+    pauseDockTimer();
     dockTimerTargetSeconds = parsed;
-    if (parsed <= 0) pauseDockTimer();
+    dockTimerRemaining = parsed;
+    dockTimerEndsAt = null;
+    dockTimerFinishedAt = null;
+    syncDockTimerControls();
+    persistDockTimer();
     return true;
   }
 
@@ -248,12 +372,6 @@
     const parts = dateStr.split('-');
     const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
     return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-  }
-
-  function formatTime(isoStr) {
-    if (!isoStr) return '';
-    const d = new Date(isoStr);
-    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   }
 
   function metricsMap() {
@@ -451,7 +569,7 @@
           ? (count === 1 ? '1 Job Applied' : count + ' Jobs Applied')
           : (count + ' ' + m.name);
         const label = isGoalMet ? baseLabel + ' (Goal Met)' : baseLabel;
-        badge.title = baseLabel + ' on ' + dateStr + ' (' + count + '/' + (m.dailyGoal || 1) + ' goal). Click to view details.';
+        badge.title = baseLabel + ' on ' + dateStr + ' (' + count + '/' + (m.dailyGoal || 1) + ' goal)';
 
         const dot = document.createElement('span');
         dot.className = 'pt-badge-dot';
@@ -463,11 +581,6 @@
 
         badge.appendChild(dot);
         badge.appendChild(text);
-
-        badge.addEventListener('click', (e) => {
-          e.stopPropagation();
-          openDayModal(dateStr, false);
-        });
 
         overlay.appendChild(badge);
       });
@@ -502,14 +615,21 @@
         '</div>',
         '<div class="pt-panel-body">',
 
-          // Google Account bar
-          '<div id="pt-dock-account" style="display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:#f8f9fa;border:1px solid #e8eaed;border-radius:6px;font-size:11px;">',
-            '<div id="pt-dock-account-info" class="pt-hidden" style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;">',
-              '<div style="width:18px;height:18px;border-radius:50%;background:#1a73e8;color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;" id="pt-dock-account-badge">G</div>',
-              '<span id="pt-dock-account-email" style="font-weight:500;color:#202124;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;"></span>',
-              '<button id="pt-dock-signout" style="background:none;border:none;color:#d93025;font-size:11px;font-weight:500;cursor:pointer;padding:2px 4px;">Sign Out</button>',
+          // Google Account card (glass). Styled by content.css classes so the
+          // dark theme can override without !important.
+          '<div id="pt-dock-account" class="pt-glass-card pt-account-card">',
+            '<div id="pt-dock-account-info" class="pt-account-info pt-hidden">',
+              '<div class="pt-account-avatar" id="pt-dock-account-badge" aria-hidden="true">G</div>',
+              '<div class="pt-account-meta">',
+                '<span id="pt-dock-account-email" class="pt-account-email"></span>',
+                '<span id="pt-dock-account-sub" class="pt-account-sub">Google Account</span>',
+              '</div>',
+              '<button type="button" id="pt-dock-signout" class="pt-account-signout" aria-label="Sign out of this Google Account">Sign out</button>',
             '</div>',
-            '<button id="pt-dock-signin" style="width:100%;background:#fff;border:1px solid #dadce0;border-radius:4px;padding:5px 8px;font-size:11px;font-weight:600;color:#202124;cursor:pointer;">Sign In with Google</button>',
+            '<button type="button" id="pt-dock-signin" class="pt-google-btn">',
+              '<span class="pt-google-btn-icon" aria-hidden="true"><svg viewBox="0 0 48 48" width="16" height="16" aria-hidden="true" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg></span>',
+              '<span class="pt-google-btn-label">Continue with Google</span>',
+            '</button>',
           '</div>',
 
           // Hero card
@@ -517,7 +637,12 @@
             '<div class="pt-hero-count" id="pt-today-count">0</div>',
             '<div class="pt-hero-label" id="pt-today-label">jobs applied today</div>',
             '<div class="pt-action-row">',
-              '<button class="pt-btn-primary" id="pt-quick-add-job">+1 Job Applied</button>',
+              '<button type="button" class="pt-btn-primary pt-flow-btn" id="pt-quick-add-job">',
+                '<span class="pt-flow-btn-circle" aria-hidden="true"></span>',
+                '<span class="pt-flow-btn-arrow pt-flow-btn-arrow-in" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>',
+                '<span class="pt-flow-btn-label">+1 Job Applied</span>',
+                '<span class="pt-flow-btn-arrow pt-flow-btn-arrow-out" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>',
+              '</button>',
               '<button class="pt-btn-secondary" id="pt-undo-job">-1</button>',
             '</div>',
           '</div>',
@@ -655,7 +780,7 @@
       timerInput.addEventListener('blur', () => {
         applyDockTimerInput(timerInput.value, dockTimerInputAtFocus);
         dockTimerInputAtFocus = null;
-        timerInput.value = TrackerStorage.formatSecondsToMMSS(dockTimerSeconds);
+        updateDockTimerInputDisplay();
       });
     }
 
@@ -832,9 +957,6 @@
 
       col.appendChild(bar);
       col.appendChild(tooltip);
-      col.addEventListener('click', () => {
-        openDayModal(day.date, false);
-      });
       barsContainer.appendChild(col);
     });
   }
@@ -849,11 +971,36 @@
         const signin = document.getElementById('pt-dock-signin');
         const emailEl = document.getElementById('pt-dock-account-email');
         const badgeEl = document.getElementById('pt-dock-account-badge');
+        const subEl = document.getElementById('pt-dock-account-sub');
         if (user && user.email) {
           if (info) info.classList.remove('pt-hidden');
           if (signin) signin.classList.add('pt-hidden');
-          if (emailEl) emailEl.textContent = user.email;
-          if (badgeEl) badgeEl.textContent = (user.name || user.email)[0].toUpperCase();
+          if (emailEl) {
+            emailEl.textContent = user.email;
+            emailEl.title = user.email;
+          }
+          if (badgeEl) {
+            badgeEl.textContent = '';
+            if (user.picture) {
+              const img = document.createElement('img');
+              img.alt = '';
+              img.referrerPolicy = 'no-referrer';
+              img.src = user.picture;
+              img.addEventListener('error', () => {
+                badgeEl.textContent = (user.name || user.email)[0].toUpperCase();
+              });
+              badgeEl.appendChild(img);
+            } else {
+              badgeEl.textContent = (user.name || user.email)[0].toUpperCase();
+            }
+          }
+          if (subEl) {
+            const expired = user.sessionExpired === true;
+            subEl.textContent = expired
+              ? 'Session expired. Sign out and back in to reconnect.'
+              : (user.token ? 'Google Account' : 'Google Account (email sign-in)');
+            subEl.classList.toggle('pt-expired', expired);
+          }
         } else {
           if (info) info.classList.add('pt-hidden');
           if (signin) signin.classList.remove('pt-hidden');
@@ -995,7 +1142,9 @@
           delBtn.title = 'Delete "' + m.name + '" tracker';
           delBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
-            if (confirm('Delete tracker "' + m.name + '" and all its entries?')) {
+            // Historical logs are deliberately preserved by deleteMetric, so do
+            // not promise the user that their entries go away with the tracker.
+            if (confirm('Delete tracker "' + m.name + '"? Entries already logged are kept in your history.')) {
               await TrackerStorage.deleteMetric(m.id);
               knownMetricIds.delete(m.id);
               activeVisibleMetrics.delete(m.id);
@@ -1028,7 +1177,7 @@
   }
 
   // ---------------------------------------------------------------
-  // 3. DAY MODAL — view entries, add entries, delete entries
+  // 3. DAY MODAL — add an entry for a date
   // ---------------------------------------------------------------
   async function openDayModal(dateStr, focusForm) {
     const old = document.getElementById('pt-day-modal');
@@ -1050,34 +1199,7 @@
       const m = mMap[id];
       return c + ' ' + (m ? m.name : id);
     });
-    const summaryText = summaryParts.length > 0 ? summaryParts.join(', ') : 'No entries';
-
-    // Build entries HTML
-    let entriesHTML = '';
-    if (logs.length === 0) {
-      entriesHTML = '<div class="pt-empty-state">No entries logged for this date.</div>';
-    } else {
-      logs.forEach(log => {
-        const m = mMap[log.metricId] || { name: log.metricId, color: '#1a73e8' };
-        const mainText = log.company || m.name;
-        const sub = log.role ? log.role : '';
-        const notes = log.notes ? log.notes : '';
-        const time = formatTime(log.timestamp);
-
-        entriesHTML += [
-          '<div class="pt-entry-item" data-id="' + escapeHtml(log.id) + '">',
-            '<div class="pt-entry-dot" style="background:' + escapeHtml(m.color) + '"></div>',
-            '<div class="pt-entry-details">',
-              '<div class="pt-entry-main">' + escapeHtml(mainText) + '</div>',
-              sub ? '<div class="pt-entry-sub">' + escapeHtml(sub) + '</div>' : '',
-              notes ? '<div class="pt-entry-sub" style="font-style:italic;">' + escapeHtml(notes) + '</div>' : '',
-              '<div class="pt-entry-meta">' + escapeHtml(m.name) + ' &middot; ' + escapeHtml(time) + '</div>',
-            '</div>',
-            '<button class="pt-delete-entry" data-id="' + escapeHtml(log.id) + '" title="Delete">&times;</button>',
-          '</div>'
-        ].join('');
-      });
-    }
+    const summaryText = summaryParts.length > 0 ? summaryParts.join(', ') : 'Nothing logged yet';
 
     // Metric options
     let metricOptions = '';
@@ -1095,7 +1217,6 @@
           '<button class="pt-close-btn" id="pt-modal-close">&times;</button>',
         '</div>',
         '<div class="pt-modal-body">',
-          '<div id="pt-modal-entries">' + entriesHTML + '</div>',
           '<div class="pt-modal-form">',
             '<label>Add entry for ' + escapeHtml(dateStr) + '</label>',
             '<select id="pt-modal-metric">' + metricOptions + '</select>',
@@ -1118,18 +1239,7 @@
       if (e.target === backdrop) backdrop.remove();
     });
 
-    // Delete entry buttons
-    backdrop.querySelectorAll('.pt-delete-entry').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        await TrackerStorage.deleteLog(btn.dataset.id);
-        backdrop.remove();
-        await refreshData();
-        openDayModal(dateStr);
-      });
-    });
-
-    // Add entry
+    // Add entry, then close: the badge count is the only readout for a day.
     backdrop.querySelector('#pt-modal-add').addEventListener('click', async () => {
       const metricId = backdrop.querySelector('#pt-modal-metric').value;
       const company = backdrop.querySelector('#pt-modal-company').value;
@@ -1139,7 +1249,6 @@
       await TrackerStorage.addLog({ metricId, date: dateStr, count: 1, company, role, notes });
       backdrop.remove();
       await refreshData();
-      openDayModal(dateStr);
     });
 
     if (focusForm) {
@@ -1223,34 +1332,66 @@
   // ---------------------------------------------------------------
   // 5. OBSERVER & INIT
   // ---------------------------------------------------------------
+  // Google Calendar is an SPA and can replace large parts of the document when
+  // the user switches month/week/day. Re-mount the dock if it went with it,
+  // restoring the transient state that does not live in storage.
+  function ensureDockMounted() {
+    if (document.getElementById('pt-floating-dock')) return;
+    mountFloatingDock();
+    applyTheme(currentTheme);
+    const panel = document.getElementById('pt-dock-panel');
+    if (panel) panel.classList.toggle('pt-hidden', !isPanelOpen);
+    syncDockTimerControls();
+    updateDock();
+  }
+
   let debounceTimer = null;
-  const observer = new MutationObserver((mutations) => {
-    const isOnlyInternal = mutations && mutations.length > 0 && mutations.every(mutation => {
-      const target = mutation.target;
-      if (target && target.closest && (
-        target.closest('.pt-cell-overlay') ||
-        target.closest('#pt-floating-dock') ||
-        target.closest('.pt-modal-backdrop')
-      )) {
-        return true;
-      }
-      return false;
+  let observer = null;
+
+  function createObserver() {
+    return new MutationObserver((mutations) => {
+      const isOnlyInternal = mutations && mutations.length > 0 && mutations.every(mutation => {
+        const target = mutation.target;
+        if (target && target.closest && (
+          target.closest('.pt-cell-overlay') ||
+          target.closest('#pt-floating-dock') ||
+          target.closest('.pt-modal-backdrop')
+        )) {
+          return true;
+        }
+        return false;
+      });
+
+      if (isOnlyInternal) return;
+
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        ensureDockMounted();
+        renderBadges();
+      }, 100);
     });
-
-    if (isOnlyInternal) return;
-
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => renderBadges(), 100);
-  });
+  }
 
   async function init() {
     mountFloatingDock();
+    // Recover a countdown that kept running while this page was closed.
+    hydrateDockTimer();
+    TrackerStorage.onTimerChanged(DOCK_TIMER_KEY, (record) => {
+      // Our own write, echoed back. Another Calendar tab or the service worker
+      // closing out a countdown is what this listener is actually for.
+      if (record && record.updatedAt === lastPersistedDockTimerAt) return;
+      applyStoredDockTimer(record);
+    });
     const savedTheme = await TrackerStorage.getTheme();
     applyTheme(savedTheme);
     await refreshData();
 
+    observer = createObserver();
     observer.observe(document.body, { childList: true, subtree: true });
 
+    // Single storage listener. A second raw chrome.storage.onChanged listener
+    // used to live here as well, which meant every log write ran refreshData
+    // (three storage reads plus a full re-render) twice.
     TrackerStorage.onChanged((changes) => {
       if (changes && changes.pt_theme) {
         applyTheme(changes.pt_theme.newValue);
@@ -1258,35 +1399,54 @@
       refreshData();
     });
 
-    if (typeof TrackerAuth !== 'undefined') {
-      TrackerAuth.onAuthChanged(() => refreshData());
-    }
-
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
-      chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && (changes.logs || changes.metrics || changes.pt_theme)) {
-          if (changes.pt_theme) {
-            applyTheme(changes.pt_theme.newValue);
-          }
-          refreshData();
-        }
-      });
-    }
-
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-      chrome.runtime.onMessage.addListener(async (msg) => {
+      chrome.runtime.onMessage.addListener((msg) => {
         if (msg && msg.type === 'PT_REFRESH') {
-          const t = await TrackerStorage.getTheme();
-          applyTheme(t);
-          refreshData();
+          TrackerStorage.getTheme().then(t => {
+            applyTheme(t);
+            refreshData();
+          });
         }
+        // Returning a promise from an onMessage listener is not supported in MV3.
+        return false;
       });
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  }
+
+  // Test-only surface. `module` is undefined in a content script, so this block
+  // never runs in the browser; the Node suite uses it to drive the pure helpers
+  // and the solve-timer state machine without a real browser.
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      dateFromDateKey,
+      escapeHtml,
+      formatSolveTimeString,
+      applyDockTimerInput,
+      consumeDockSolveTime,
+      getDockElapsedSeconds,
+      startDockTimer,
+      pauseDockTimer,
+      resetDockTimer,
+      tickDockTimer,
+      hydrateDockTimer,
+      applyStoredDockTimer,
+      dockTimerRecord,
+      __setNow: (fn) => { nowMs = fn || (() => Date.now()); },
+      getDockTimerState: () => ({
+        seconds: getDockRemainingSeconds(),
+        target: dockTimerTargetSeconds,
+        running: isDockTimerRunning,
+        hasInterval: dockTimerInterval !== null,
+        finishedAt: dockTimerFinishedAt
+      })
+    };
   }
 })();

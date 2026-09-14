@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Job & Activity Tracker for Google Calendar",
-  "version": "1.2.0",
-  "description": "Track job applications, LeetCodes, and daily streaks with a direct visual overlay on Google Calendar.",
+  "version": "1.3.0",
+  "description": "Track job applications, LeetCodes, and daily streaks with a direct visual overlay on Google Calendar. Auto-logs LeetCode and NeetCode solves and ATS job applications.",
   "action": {
     "default_popup": "popup/popup.html",
     "default_title": "Track Applications & LeetCode",
@@ -12,7 +12,9 @@
       "128": "icons/icon128.png"
     }
   },
-
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
   "content_scripts": [
     {
       "matches": [
@@ -27,11 +29,66 @@
         "content/content.css"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://leetcode.com/problems/*",
+        "https://leetcode.cn/problems/*"
+      ],
+      "js": [
+        "shared/auth.js",
+        "shared/storage.js",
+        "shared/auto-tracker-core.js",
+        "content/adapters/leetcode.js",
+        "content/auto-tracker.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://neetcode.io/*"
+      ],
+      "js": [
+        "shared/auth.js",
+        "shared/storage.js",
+        "shared/auto-tracker-core.js",
+        "content/adapters/neetcode.js",
+        "content/auto-tracker.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://boards.greenhouse.io/*",
+        "https://job-boards.greenhouse.io/*",
+        "https://boards.eu.greenhouse.io/*",
+        "https://job-boards.eu.greenhouse.io/*",
+        "https://jobs.lever.co/*",
+        "https://jobs.eu.lever.co/*",
+        "https://jobs.ashbyhq.com/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.myworkdaysite.com/*"
+      ],
+      "js": [
+        "shared/auth.js",
+        "shared/storage.js",
+        "shared/auto-tracker-core.js",
+        "content/adapters/ats/confirmation.js",
+        "content/adapters/ats/greenhouse.js",
+        "content/adapters/ats/lever.js",
+        "content/adapters/ats/ashby.js",
+        "content/adapters/ats/workday.js",
+        "content/auto-tracker.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle"
     }
   ],
   "permissions": [
     "storage",
-    "identity"
+    "identity",
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "https://calendar.google.com/*",

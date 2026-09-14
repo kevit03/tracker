@@ -192,9 +192,21 @@ function createMockChrome(initialStore = {}) {
 
   const identity = new MockIdentityAPI();
 
+  // chrome.storage.session is exposed to content scripts only after the
+  // service worker calls setAccessLevel; the mock records that call so tests
+  // can assert on it and otherwise behaves like a second in-memory area.
+  const sessionStorageArea = new MockStorageArea('session', eventBus);
+  sessionStorageArea.accessLevel = 'TRUSTED_CONTEXTS';
+  sessionStorageArea.setAccessLevel = function (details, callback) {
+    this.accessLevel = details && details.accessLevel ? details.accessLevel : this.accessLevel;
+    if (typeof callback === 'function') process.nextTick(callback);
+    return Promise.resolve();
+  };
+
   const mock = {
     storage: {
       local: localStorageArea,
+      session: sessionStorageArea,
       onChanged: eventBus
     },
     identity: identity,

@@ -10,6 +10,9 @@ const SUITES = [
   { name: 'Authentication & Session Suite', file: './auth.test.js' },
   { name: 'Multi-User Isolation Suite', file: './isolation.test.js' },
   { name: 'Event & Real-Time Sync Suite', file: './events.test.js' },
+  { name: 'Cross-Context Concurrency Suite', file: './concurrency.test.js' },
+  { name: 'Solve Timer & Date Decoding Suite', file: './timer.test.js' },
+  { name: 'Auto-Tracker Adapter & Dedupe Suite', file: './autotracker.test.js' },
   { name: 'Zero-Emoji Compliance Suite', file: './emoji.test.js' },
   { name: 'Manifest V3 Validation Suite', file: './manifest.test.js' }
 ];

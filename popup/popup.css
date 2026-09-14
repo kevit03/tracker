@@ -27,10 +27,26 @@
   --amber: #f9ab00;
   --amber-hover: #f29900;
   --red: #d93025;
+  --red-ring: rgba(217, 48, 37, 0.25);
   --tooltip-bg: #202124;
   --tooltip-text: #ffffff;
   --focus-ring: #1a73e8;
+  --scrim: rgba(32, 33, 36, 0.5);
+  --shadow-modal: 0 8px 24px rgba(0, 0, 0, 0.25);
   --radius: 8px;
+  --ease-flow: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Glassmorphism: translucent surface over a soft color field, gradient edge */
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-edge-1: rgba(26, 115, 232, 0.45);
+  --glass-edge-2: rgba(30, 142, 62, 0.35);
+  --glass-glow-1: rgba(26, 115, 232, 0.30);
+  --glass-glow-2: rgba(30, 142, 62, 0.24);
+  --glass-shadow: 0 4px 16px rgba(60, 64, 67, 0.10);
+  --pill-bg: rgba(255, 255, 255, 0.75);
+  --pill-border: rgba(32, 33, 36, 0.08);
+  --google-btn-bg: #ffffff;
+  --google-btn-bg-hover: #f8fbff;
+  --google-btn-border: #dadce0;
 }
 
 body.pt-dark {
@@ -59,9 +75,24 @@ body.pt-dark {
   --amber: #fdd663;
   --amber-hover: #fcc934;
   --red: #f28b82;
+  --red-ring: rgba(242, 139, 130, 0.3);
   --tooltip-bg: #e8eaed;
   --tooltip-text: #202124;
   --focus-ring: #8ab4f8;
+  --scrim: rgba(0, 0, 0, 0.6);
+  /* A black shadow is invisible on a dark page; lean on depth + spread */
+  --shadow-modal: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(232, 234, 237, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-edge-1: rgba(138, 180, 248, 0.45);
+  --glass-edge-2: rgba(129, 201, 149, 0.30);
+  --glass-glow-1: rgba(138, 180, 248, 0.20);
+  --glass-glow-2: rgba(129, 201, 149, 0.16);
+  --glass-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --pill-bg: rgba(255, 255, 255, 0.08);
+  --pill-border: rgba(255, 255, 255, 0.12);
+  --google-btn-bg: rgba(255, 255, 255, 0.08);
+  --google-btn-bg-hover: rgba(255, 255, 255, 0.14);
+  --google-btn-border: rgba(255, 255, 255, 0.18);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -234,6 +265,24 @@ button:disabled {
   box-shadow: 0 0 0 2px var(--green-ring);
 }
 
+/* Countdown that has reached zero. This is a resting state, not a flash: the
+   countdown can finish while the popup is closed, so the field has to still be
+   saying so whenever the user next opens it. Cleared by Reset or a re-arm. */
+.timer-input.timer-expired {
+  border-color: var(--red);
+  box-shadow: 0 0 0 2px var(--red-ring);
+  animation: timer-expired-pulse 0.9s ease-in-out 3;
+}
+
+@keyframes timer-expired-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--red-ring); }
+  50% { box-shadow: 0 0 0 5px var(--red-ring); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-input.timer-expired { animation: none; }
+}
+
 .timer-btn-group {
   display: flex;
   gap: 4px;
@@ -278,50 +327,106 @@ button:disabled {
   color: var(--text-main);
 }
 
-/* Google Account Bar */
-.account-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+/* Glassmorphism. The card carries its own soft color field so the blur and
+   tint read the same whatever sits underneath, in both themes. */
+.glass-card {
+  /* overflow:hidden lets a column-flex parent shrink this to 0; refuse. */
+  flex-shrink: 0;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
+    linear-gradient(135deg, var(--glass-edge-1), var(--glass-edge-2)) border-box;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--glass-shadow);
+}
+
+.glass-card::before {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 18% 25%, var(--glass-glow-1) 0, transparent 38%),
+    radial-gradient(circle at 85% 75%, var(--glass-glow-2) 0, transparent 40%);
+  filter: blur(22px);
+  pointer-events: none;
+}
+
+/* Google Account card */
+.account-card {
+  padding: 8px 10px;
   font-size: 11px;
 }
 
 .account-info {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 1;
+  gap: 8px;
   min-width: 0;
 }
 
-.account-badge {
-  width: 18px;
-  height: 18px;
+.account-avatar {
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  background: var(--blue);
+  background: linear-gradient(135deg, var(--blue), var(--green));
   color: var(--on-blue);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px var(--glass-bg), 0 0 0 3px var(--glass-edge-1);
 }
 
-.account-email {
-  font-weight: 500;
-  color: var(--text-main);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.account-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   flex: 1;
   min-width: 0;
 }
 
+.account-email {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-border);
+  font-weight: 600;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-sub {
+  font-size: 10px;
+  color: var(--text-sec);
+  padding-left: 2px;
+}
+
+.account-sub.expired {
+  color: var(--red);
+  font-weight: 500;
+}
+
+/* Also worn by the destructive buttons in the settings and edit dialogs */
 .account-signout-btn {
   background: none;
   border: none;
@@ -330,33 +435,82 @@ button:disabled {
   font-weight: 500;
   cursor: pointer;
   padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s var(--ease-flow);
 }
 
 .account-signout-btn:hover {
   text-decoration: underline;
+  background: var(--red-ring);
 }
 
-.account-signin-btn {
+/* Google sign-in pill. The G sits on a white disc so it stays crisp on dark. */
+.google-btn {
   width: 100%;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 5px 8px;
-  font-size: 11px;
-  font-weight: 600;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--google-btn-border);
+  background: var(--google-btn-bg);
   color: var(--text-main);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s;
+  transition:
+    transform 0.2s var(--ease-flow),
+    box-shadow 0.2s var(--ease-flow),
+    background 0.2s var(--ease-flow),
+    border-color 0.2s var(--ease-flow);
 }
 
-.account-signin-btn:hover {
-  background: var(--hover);
+.google-btn:hover {
+  background: var(--google-btn-bg-hover);
   border-color: var(--blue-text);
-  color: var(--blue-text);
+  box-shadow: 0 4px 14px rgba(26, 115, 232, 0.18);
+  transform: translateY(-1px);
+}
+
+.google-btn:active {
+  transform: scale(0.95);
+  box-shadow: none;
+}
+
+.google-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-sizing: border-box;
+  padding: 1px;
+  flex-shrink: 0;
+}
+
+.google-btn-compact {
+  width: auto;
+  padding: 6px 12px;
+}
+
+.modal-note {
+  margin: 0 0 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-sec);
+}
+
+.modal-content.glass-card {
+  --glass-bg: rgba(255, 255, 255, 0.88);
+  border-radius: 12px;
+}
+
+body.pt-dark .modal-content.glass-card {
+  --glass-bg: rgba(41, 42, 45, 0.88);
 }
 
 /* Inline status / error line under the date row */
@@ -505,6 +659,119 @@ button:disabled {
 .btn-primary:hover { background: var(--blue-hover); filter: brightness(1.06); }
 
 .btn-primary:active { filter: brightness(0.93); }
+
+/* Flow button, adapted from the 21st.dev FlowButton. Rests as a pill with a
+   tinted fill; on hover a disc of the button color grows from the left to
+   fill it, the label slides right, one arrow slides in from the left as the
+   other slides out to the right, and the pill relaxes into a rounded
+   rectangle. The color is --flow-color, painted per tracker by popup.js. */
+.flow-btn {
+  --flow-color: var(--blue);
+  --flow-on-color: var(--on-blue);
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--flow-color);
+  border-radius: 100px;
+  color: var(--flow-color);
+  padding: 9px 30px;
+  transition:
+    border-radius 0.3s var(--ease-flow),
+    color 0.3s var(--ease-flow),
+    transform 0.15s var(--ease-flow);
+}
+
+.btn-primary.flow-btn,
+.btn-primary.flow-btn:hover {
+  background: color-mix(in srgb, var(--flow-color) 12%, transparent);
+  filter: none;
+}
+
+.flow-btn:hover {
+  border-radius: 12px;
+  color: var(--flow-on-color);
+}
+
+.flow-btn:active {
+  transform: scale(0.95);
+}
+
+.flow-btn-circle {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: var(--flow-color);
+  opacity: 0;
+  transform: scale(0);
+  transition: transform 0.5s var(--ease-flow), opacity 0.5s var(--ease-flow);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.flow-btn:hover .flow-btn-circle {
+  opacity: 1;
+  transform: scale(44);
+}
+
+.flow-btn-label {
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+  transition: transform 0.3s var(--ease-flow);
+}
+
+.flow-btn:hover .flow-btn-label {
+  transform: translateX(6px);
+}
+
+.flow-btn-arrow {
+  position: absolute;
+  top: 50%;
+  margin-top: -7px;
+  display: inline-flex;
+  z-index: 1;
+  pointer-events: none;
+  transition: transform 0.3s var(--ease-flow), opacity 0.3s var(--ease-flow);
+}
+
+.flow-btn-arrow-in {
+  left: 12px;
+  opacity: 0;
+  transform: translateX(-100%);
+}
+
+.flow-btn:hover .flow-btn-arrow-in {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.flow-btn-arrow-out {
+  right: 12px;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.flow-btn:hover .flow-btn-arrow-out {
+  opacity: 0;
+  transform: translateX(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-btn,
+  .flow-btn-circle,
+  .flow-btn-label,
+  .flow-btn-arrow,
+  .google-btn {
+    transition: none;
+  }
+}
 
 .btn-secondary {
   width: 38px;
@@ -701,7 +968,7 @@ button:disabled {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(32,33,36,0.5);
+  background: var(--scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -716,7 +983,7 @@ button:disabled {
   border-radius: var(--radius);
   width: 100%;
   padding: 14px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  box-shadow: var(--shadow-modal);
 }
 
 .modal-header {
@@ -1005,7 +1272,9 @@ button:disabled {
   margin-top: 1px;
 }
 
-/* Entry history list */
+/* Entry history list.
+   Rows reuse the .goal-meter card shell, so these rules only retune the
+   type hierarchy inside them: title first, timestamp second, details last. */
 .entries-range-bar {
   margin-bottom: 6px;
 }
@@ -1018,6 +1287,52 @@ button:disabled {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+}
+
+.entry-row {
+  cursor: pointer;
+  gap: 2px;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.entry-row:hover {
+  background: var(--hover);
+  border-color: var(--text-muted);
+}
+
+.entry-title {
+  color: var(--text-main);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.entry-when {
+  color: var(--text-sec);
+  font-weight: 500;
+  font-size: 10px;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.entry-sub {
+  font-size: 11px;
+  color: var(--text-sec);
+  line-height: 1.35;
+}
+
+.entries-empty {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-sec);
+  padding: 12px 8px;
+}
+
+/* Destructive action sits opposite the confirm pair in a .modal-actions row */
+.danger-left {
+  margin-right: auto;
 }
 
 .hidden { display: none !important; }

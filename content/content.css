@@ -26,19 +26,13 @@
   font-size: 11px;
   font-weight: 600;
   line-height: 18px;
-  cursor: pointer;
-  transition: opacity 0.12s, transform 0.08s;
+  cursor: default;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
   box-shadow: 0 1px 2px rgba(60,64,67,0.12);
   border-left: 3px solid currentColor;
-}
-
-.pt-badge:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
 }
 
 .pt-badge.pt-goal-met {
@@ -111,7 +105,7 @@
   display: flex;
   align-items: flex-end;
   position: relative;
-  cursor: pointer;
+  cursor: default;
 }
 
 .pt-bar {
@@ -128,10 +122,6 @@
 
 .pt-bar.goal-hit {
   background: #1e8e3e;
-}
-
-.pt-bar-col:hover .pt-bar {
-  filter: brightness(0.9);
 }
 
 .pt-bar-tooltip {
@@ -407,8 +397,11 @@ aside .pt-quick-add-cell {
 
 .pt-panel-body {
   padding: 14px 16px;
-  max-height: 500px;
+  max-height: min(500px, calc(100vh - 140px));
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #dadce0 transparent;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -462,6 +455,292 @@ aside .pt-quick-add-cell {
 
 .pt-btn-primary:hover {
   background: #1557b0;
+}
+
+/* Flow button, adapted from the 21st.dev FlowButton: pill at rest with a
+   tinted fill; on hover a disc of the button color grows to fill it, the
+   label slides right, one arrow slides in from the left as the other slides
+   out to the right, and the pill relaxes into a rounded rectangle. */
+.pt-btn-primary.pt-flow-btn {
+  --pt-flow-color: #1a73e8;
+  --pt-flow-on-color: #ffffff;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--pt-flow-color);
+  border-radius: 100px;
+  background: color-mix(in srgb, var(--pt-flow-color) 12%, transparent);
+  color: var(--pt-flow-color);
+  padding: 8px 30px;
+  transition:
+    border-radius 0.3s cubic-bezier(0.23, 1, 0.32, 1),
+    color 0.3s cubic-bezier(0.23, 1, 0.32, 1),
+    transform 0.15s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.pt-btn-primary.pt-flow-btn:hover {
+  background: color-mix(in srgb, var(--pt-flow-color) 12%, transparent);
+  border-radius: 12px;
+  color: var(--pt-flow-on-color);
+}
+
+.pt-btn-primary.pt-flow-btn:active {
+  transform: scale(0.95);
+}
+
+.pt-flow-btn-circle {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: var(--pt-flow-color);
+  opacity: 0;
+  transform: scale(0);
+  transition: transform 0.5s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.pt-flow-btn:hover .pt-flow-btn-circle {
+  opacity: 1;
+  transform: scale(44);
+}
+
+.pt-flow-btn-label {
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+  transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.pt-flow-btn:hover .pt-flow-btn-label {
+  transform: translateX(6px);
+}
+
+.pt-flow-btn-arrow {
+  position: absolute;
+  top: 50%;
+  margin-top: -7px;
+  display: inline-flex;
+  z-index: 1;
+  pointer-events: none;
+  transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.pt-flow-btn-arrow-in {
+  left: 12px;
+  opacity: 0;
+  transform: translateX(-100%);
+}
+
+.pt-flow-btn:hover .pt-flow-btn-arrow-in {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.pt-flow-btn-arrow-out {
+  right: 12px;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.pt-flow-btn:hover .pt-flow-btn-arrow-out {
+  opacity: 0;
+  transform: translateX(100%);
+}
+
+/* Glassmorphism. The card carries its own soft color field so the blur and
+   tint read the same over Google Calendar's chrome, in both themes. */
+.pt-glass-card {
+  /* overflow:hidden lets a column-flex parent shrink this to 0; refuse. */
+  flex-shrink: 0;
+  --pt-glass-bg: rgba(255, 255, 255, 0.55);
+  --pt-glass-edge-1: rgba(26, 115, 232, 0.45);
+  --pt-glass-edge-2: rgba(30, 142, 62, 0.35);
+  --pt-glass-glow-1: rgba(26, 115, 232, 0.30);
+  --pt-glass-glow-2: rgba(30, 142, 62, 0.24);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--pt-glass-bg), var(--pt-glass-bg)) padding-box,
+    linear-gradient(135deg, var(--pt-glass-edge-1), var(--pt-glass-edge-2)) border-box;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 16px rgba(60, 64, 67, 0.10);
+}
+
+.pt-glass-card::before {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 18% 25%, var(--pt-glass-glow-1) 0, transparent 38%),
+    radial-gradient(circle at 85% 75%, var(--pt-glass-glow-2) 0, transparent 40%);
+  filter: blur(22px);
+  pointer-events: none;
+}
+
+/* Google Account card */
+.pt-account-card {
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.pt-account-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pt-account-info.pt-hidden {
+  display: none;
+}
+
+.pt-account-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1a73e8, #1e8e3e);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px var(--pt-glass-bg), 0 0 0 3px var(--pt-glass-edge-1);
+}
+
+.pt-account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.pt-account-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pt-account-email {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(32, 33, 36, 0.08);
+  font-weight: 600;
+  color: #202124;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pt-account-sub {
+  font-size: 10px;
+  color: #5f6368;
+  padding-left: 2px;
+}
+
+.pt-account-sub.pt-expired {
+  color: #d93025;
+  font-weight: 500;
+}
+
+.pt-account-signout {
+  background: none;
+  border: none;
+  color: #d93025;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: inherit;
+  transition: background 0.15s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.pt-account-signout:hover {
+  text-decoration: underline;
+  background: rgba(217, 48, 37, 0.12);
+}
+
+/* Google sign-in pill. The G sits on a white disc so it stays crisp on dark. */
+.pt-google-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid #dadce0;
+  background: #ffffff;
+  color: #202124;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    background 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    border-color 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.pt-google-btn.pt-hidden {
+  display: none;
+}
+
+.pt-google-btn:hover {
+  background: #f8fbff;
+  border-color: #1967d2;
+  box-shadow: 0 4px 14px rgba(26, 115, 232, 0.18);
+  transform: translateY(-1px);
+}
+
+.pt-google-btn:active {
+  transform: scale(0.95);
+  box-shadow: none;
+}
+
+.pt-google-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-sizing: border-box;
+  padding: 1px;
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pt-flow-btn,
+  .pt-flow-btn-circle,
+  .pt-flow-btn-label,
+  .pt-flow-btn-arrow,
+  .pt-google-btn {
+    transition: none;
+  }
 }
 
 .pt-btn-secondary {
@@ -695,77 +974,18 @@ aside .pt-quick-add-cell {
 .pt-modal-body {
   padding: 14px 18px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #dadce0 transparent;
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.pt-entry-item {
-  padding: 8px 10px;
-  border: 1px solid #e8eaed;
-  border-radius: 6px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12px;
-}
-
-.pt-entry-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-top: 4px;
-}
-
-.pt-entry-details {
-  flex: 1;
-  min-width: 0;
-}
-
-.pt-entry-main {
-  font-weight: 600;
-  color: #202124;
-}
-
-.pt-entry-sub {
-  font-size: 11px;
-  color: #5f6368;
-  margin-top: 1px;
-}
-
-.pt-entry-meta {
-  font-size: 10px;
-  /* Grey 600-ish: #9aa0a6 was 2.6:1 on the white dialog */
-  color: #70757a;
-  margin-top: 2px;
-}
-
-.pt-delete-entry {
-  background: none;
-  border: none;
-  /* #bdc1c6 was 1.8:1 — below the 3:1 floor for an interactive glyph */
-  color: #80868b;
-  cursor: pointer;
-  font-size: 13px;
-  padding: 2px 4px;
-  border-radius: 4px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.pt-delete-entry:hover {
-  color: #d93025;
-  background: #fce8e6;
 }
 
 .pt-modal-form {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border-top: 1px solid #e8eaed;
-  padding-top: 10px;
 }
 
 .pt-modal-form label {
@@ -799,14 +1019,6 @@ aside .pt-quick-add-cell {
 
 .pt-modal-form-row > * {
   flex: 1;
-}
-
-.pt-empty-state {
-  text-align: center;
-  /* #9aa0a6 on white is 2.6:1; Grey 700 keeps the muted read and passes AA */
-  color: #5f6368;
-  font-size: 12px;
-  padding: 16px 0;
 }
 
 /* ===== Create tracker modal ===== */
@@ -912,6 +1124,28 @@ aside .pt-quick-add-cell {
   box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
 }
 
+/* Countdown that has reached zero. A resting state, not a flash: the countdown
+   can finish while the tab is closed, so the field must still say so on return. */
+.pt-timer-input.pt-timer-expired {
+  border-color: #d93025;
+  box-shadow: 0 0 0 2px rgba(217, 48, 37, 0.25);
+  animation: pt-timer-expired-pulse 0.9s ease-in-out 3;
+}
+
+#pt-floating-dock.pt-dark .pt-timer-input.pt-timer-expired {
+  border-color: #f28b82;
+  box-shadow: 0 0 0 2px rgba(242, 139, 130, 0.3);
+}
+
+@keyframes pt-timer-expired-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(217, 48, 37, 0.25); }
+  50% { box-shadow: 0 0 0 5px rgba(217, 48, 37, 0.25); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pt-timer-input.pt-timer-expired { animation: none; }
+}
+
 .pt-timer-btn-group {
   display: flex;
   gap: 6px;
@@ -973,6 +1207,10 @@ aside .pt-quick-add-cell {
   background: #35383b;
 }
 
+#pt-floating-dock.pt-dark .pt-dock-icon {
+  background: #8ab4f8;
+}
+
 #pt-floating-dock.pt-dark .pt-streak-pill {
   background: #3c4043;
   color: #e8eaed;
@@ -983,6 +1221,11 @@ aside .pt-quick-add-cell {
   border-color: #5f6368;
   color: #e8eaed;
   box-shadow: 0 8px 28px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+}
+
+#pt-floating-dock.pt-dark .pt-panel-body,
+.pt-modal-dialog.pt-dark .pt-modal-body {
+  scrollbar-color: #5f6368 transparent;
 }
 
 #pt-floating-dock.pt-dark .pt-panel-header {
@@ -1013,29 +1256,50 @@ aside .pt-quick-add-cell {
   color: #e8eaed;
 }
 
-/* The account bar is built with inline styles in content.js, so these
-   overrides need !important to win — same convention as .pt-dock-stats-bar. */
-#pt-floating-dock.pt-dark #pt-dock-account {
-  background: #282a2d !important;
-  border-color: #3c4043 !important;
+/* Account card and sign-in, dark. Class-based now, so no !important needed. */
+#pt-floating-dock.pt-dark .pt-glass-card {
+  --pt-glass-bg: rgba(255, 255, 255, 0.06);
+  --pt-glass-edge-1: rgba(138, 180, 248, 0.45);
+  --pt-glass-edge-2: rgba(129, 201, 149, 0.30);
+  --pt-glass-glow-1: rgba(138, 180, 248, 0.20);
+  --pt-glass-glow-2: rgba(129, 201, 149, 0.16);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
-#pt-floating-dock.pt-dark #pt-dock-account-email {
-  color: #e8eaed !important;
+#pt-floating-dock.pt-dark .pt-account-avatar {
+  background: linear-gradient(135deg, #8ab4f8, #81c995);
+  color: #202124;
 }
 
-#pt-floating-dock.pt-dark #pt-dock-signout {
-  color: #f28b82 !important;
+#pt-floating-dock.pt-dark .pt-account-email {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #e8eaed;
 }
 
-#pt-floating-dock.pt-dark #pt-dock-signin {
-  background: #2d2f31 !important;
-  border-color: #5f6368 !important;
-  color: #e8eaed !important;
+#pt-floating-dock.pt-dark .pt-account-sub {
+  color: #9aa0a6;
 }
 
-#pt-floating-dock.pt-dark #pt-dock-signin:hover {
-  background: #35383b !important;
+#pt-floating-dock.pt-dark .pt-account-sub.pt-expired,
+#pt-floating-dock.pt-dark .pt-account-signout {
+  color: #f28b82;
+}
+
+#pt-floating-dock.pt-dark .pt-account-signout:hover {
+  background: rgba(242, 139, 130, 0.16);
+}
+
+#pt-floating-dock.pt-dark .pt-google-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #e8eaed;
+}
+
+#pt-floating-dock.pt-dark .pt-google-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: #8ab4f8;
+  box-shadow: 0 4px 14px rgba(138, 180, 248, 0.18);
 }
 
 #pt-floating-dock.pt-dark .pt-hero-card {
@@ -1063,6 +1327,21 @@ aside .pt-quick-add-cell {
 #pt-floating-dock.pt-dark .pt-btn-primary:hover,
 .pt-modal-dialog.pt-dark .pt-btn-primary:hover {
   background: #aecbfa;
+}
+
+#pt-floating-dock.pt-dark .pt-btn-primary.pt-flow-btn,
+#pt-floating-dock.pt-dark .pt-btn-primary.pt-flow-btn:hover {
+  --pt-flow-color: #8ab4f8;
+  --pt-flow-on-color: #202124;
+  background: color-mix(in srgb, var(--pt-flow-color) 14%, transparent);
+}
+
+#pt-floating-dock.pt-dark .pt-btn-primary.pt-flow-btn {
+  color: var(--pt-flow-color);
+}
+
+#pt-floating-dock.pt-dark .pt-btn-primary.pt-flow-btn:hover {
+  color: var(--pt-flow-on-color);
 }
 
 /* :not(.running) so the amber running state below still wins */
@@ -1290,40 +1569,6 @@ aside .pt-quick-add-cell {
 .pt-modal-dialog.pt-dark .pt-close-btn:hover {
   background: #3c4043;
   color: #e8eaed;
-}
-
-.pt-modal-dialog.pt-dark .pt-entry-item {
-  border-color: #3c4043;
-  background: #282a2d;
-}
-
-.pt-modal-dialog.pt-dark .pt-entry-main {
-  color: #e8eaed;
-}
-
-.pt-modal-dialog.pt-dark .pt-entry-sub {
-  color: #9aa0a6;
-}
-
-.pt-modal-dialog.pt-dark .pt-entry-meta {
-  color: #80868b;
-}
-
-.pt-modal-dialog.pt-dark .pt-delete-entry {
-  color: #80868b;
-}
-
-.pt-modal-dialog.pt-dark .pt-delete-entry:hover {
-  color: #f28b82;
-  background: rgba(242, 139, 130, 0.15);
-}
-
-.pt-modal-dialog.pt-dark .pt-empty-state {
-  color: #9aa0a6;
-}
-
-.pt-modal-dialog.pt-dark .pt-modal-form {
-  border-top-color: #3c4043;
 }
 
 .pt-modal-dialog.pt-dark .pt-modal-form label {
