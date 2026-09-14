@@ -28,6 +28,10 @@ A Google Chrome extension to track daily job applications, LeetCode problems, an
 - **Multi-Format Date Extraction** 
 - **Layer Stacking & Positioning**
 
+### Popup Widgets
+- The popup below the counter is a layout of widgets (Daily Goal, Week / Month / Total, Activity Chart, Streak, Solve Timer, Solve Time Stats, Add Details) persisted in `chrome.storage.local['pt_widgets']` by `shared/widgets.js`.
+- The centered plus button adds a widget; the gear that appears on hover opens its settings: bind it to one tracker or let it follow the selected tab, set chart length (7 / 14 / 30 days), move it up or down, or remove it. Multiple copies of a widget can be pinned to different trackers.
+
 ### Auto-Tracking Engine
 - **Plugin adapters**: one declarative `PlatformAdapter` per site (`content/adapters/`), registered with `shared/auto-tracker-core.js`. A new platform is a `matches(url)` plus an `init(onSuccess)` that returns its own teardown; ATS adapters are ~15 lines on top of `adapters/ats/confirmation.js`.
 - **Supported today**: LeetCode (Accepted submission), NeetCode (IDE pass, roadmap/practice checkbox), Greenhouse, Lever, Ashby, Workday (application confirmation).

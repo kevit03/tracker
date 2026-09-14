@@ -73,8 +73,11 @@
       <div class="timer-hint" id="first-run-tips"></div>
     </div>
 
-    <!-- LeetCode Solve Timer (active on LeetCode tab) -->
-    <div id="leetcode-timer-widget" class="timer-widget hidden">
+    <!-- Singleton widget markup lives here until the layout places it. The
+         timer keeps its state and handlers because the node is MOVED into a
+         widget, never rebuilt. -->
+    <div id="widget-parts" hidden>
+    <div id="leetcode-timer-widget" class="timer-widget">
       <div class="timer-header">
         <span class="timer-title">Problem Solve Timer</span>
         <span class="timer-hint">Click time to type</span>
@@ -90,8 +93,8 @@
       </div>
     </div>
 
-    <!-- Cumulative LeetCode Solve Time (active on LeetCode tab) -->
-    <div id="leetcode-time-stats" class="summary-stats hidden">
+    <div id="leetcode-time-block">
+    <div id="leetcode-time-stats" class="summary-stats">
       <div class="stat-item">
         <span class="stat-value" id="lc-today-time">0m</span>
         <span class="stat-name">Today</span>
@@ -113,19 +116,9 @@
       </div>
     </div>
     <div class="timer-hint hidden" id="leetcode-time-note"></div>
-
-    <!-- Daily Goal Progress Meter -->
-    <div class="goal-meter" id="goal-meter">
-      <div class="goal-header">
-        <span class="goal-label">Daily Goal: <strong id="goal-target-num" role="button" tabindex="0" title="Open tracker settings (daily goal)">5</strong></span>
-        <span class="goal-status" id="goal-status-text">0 / 5</span>
-      </div>
-      <div class="goal-bar-wrap">
-        <div class="goal-bar-fill" id="goal-bar-fill"></div>
-      </div>
     </div>
 
-    <div class="details-section">
+    <div class="details-section" id="details-section">
       <button id="toggle-details-btn" class="details-toggle" type="button" aria-expanded="false" aria-controls="details-form">
         <span>+ Add details (company, role, notes)</span>
         <span id="details-arrow" class="arrow-down"></span>
@@ -139,57 +132,12 @@
         </div>
       </form>
     </div>
-
-    <div class="summary-stats">
-      <div class="stat-item">
-        <span class="stat-value" id="stat-week">0</span>
-        <span class="stat-name">This Week</span>
-      </div>
-      <div class="stat-divider"></div>
-      <div class="stat-item">
-        <span class="stat-value" id="stat-month">0</span>
-        <span class="stat-name">This Month</span>
-      </div>
-      <div class="stat-divider"></div>
-      <div class="stat-item">
-        <span class="stat-value" id="stat-total">0</span>
-        <span class="stat-name">Total</span>
-      </div>
     </div>
 
-    <!-- Entry History Section -->
-    <div class="activity-section">
-      <button id="toggle-entries-btn" class="activity-toggle" type="button" aria-expanded="true" aria-controls="entries-panel">
-        <span id="entries-title">Recent Entries</span>
-        <span id="entries-arrow" class="arrow-down open"></span>
-      </button>
-      <div id="entries-panel" class="activity-panel">
-        <div class="tabs-scroll entries-range-bar" id="entries-range-bar" role="group" aria-label="History range">
-          <button type="button" class="tab-item active" data-range="today">Today</button>
-          <button type="button" class="tab-item" data-range="week">7 Days</button>
-          <button type="button" class="tab-item" data-range="month">30 Days</button>
-          <button type="button" class="tab-item" data-range="all">All Time</button>
-        </div>
-        <div id="entries-list" class="entries-list"></div>
-        <div class="timer-hint" id="entries-footnote"></div>
-      </div>
-    </div>
-
-    <!-- 30-Day Activity Summary Section -->
-    <div class="activity-section">
-      <button id="toggle-activity-btn" class="activity-toggle" type="button" aria-expanded="false" aria-controls="activity-panel">
-        <span id="activity-title">30-Day Activity</span>
-        <span id="activity-arrow" class="arrow-down"></span>
-      </button>
-      <div id="activity-panel" class="activity-panel hidden">
-        <div class="activity-bars" id="activity-bars"></div>
-        <div class="activity-stats-grid">
-          <div><div class="act-stat-num" id="pop-act-total">0</div><div class="act-stat-lbl">30D Total</div></div>
-          <div><div class="act-stat-num" id="pop-act-avg">0.0</div><div class="act-stat-lbl">Daily Avg</div></div>
-          <div><div class="act-stat-num" id="pop-act-days">0</div><div class="act-stat-lbl">Active Days</div></div>
-          <div><div class="act-stat-num" id="pop-act-best">0</div><div class="act-stat-lbl">Best Day</div></div>
-        </div>
-      </div>
+    <!-- Widgets (add, remove, reorder, bind to a tracker) -->
+    <div id="widgets-host" class="widgets-host"></div>
+    <div class="add-widget-row">
+      <button id="add-widget-btn" class="add-widget-btn" type="button" title="Add widget" aria-label="Add a widget">+</button>
     </div>
 
     <footer class="footer">
@@ -265,37 +213,53 @@
       </div>
     </div>
 
-    <!-- Edit entry modal -->
-    <div id="edit-entry-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="edit-entry-title">
+    <!-- Add widget picker -->
+    <div id="add-widget-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="add-widget-title">
       <div class="modal-content">
         <div class="modal-header">
-          <h3 id="edit-entry-title">Edit Entry</h3>
-          <button id="close-edit-entry-modal" class="close-btn" type="button" aria-label="Close edit entry dialog">&times;</button>
+          <h3 id="add-widget-title">Add Widget</h3>
+          <button id="close-add-widget-modal" class="close-btn" type="button" aria-label="Close add widget dialog">&times;</button>
         </div>
-        <form id="edit-entry-form">
-          <div class="form-group">
-            <span class="timer-hint" id="edit-entry-context"></span>
+        <div id="add-widget-list" class="widget-picker"></div>
+        <p class="modal-note">New widgets follow the selected tracker tab. Open a widget's settings to pin it to one tracker.</p>
+      </div>
+    </div>
+
+    <!-- Widget settings -->
+    <div id="widget-settings-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="widget-settings-title">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="widget-settings-title">Widget Settings</h3>
+          <button id="close-widget-settings-modal" class="close-btn" type="button" aria-label="Close widget settings dialog">&times;</button>
+        </div>
+        <form id="widget-settings-form">
+          <div class="form-group" id="widget-metric-group">
+            <label for="widget-metric-select">Tracker</label>
+            <select id="widget-metric-select"></select>
+          </div>
+          <div class="form-group hidden" id="widget-days-group">
+            <label for="widget-days-select">Chart length</label>
+            <select id="widget-days-select">
+              <option value="7">7 days</option>
+              <option value="14">14 days</option>
+              <option value="30">30 days</option>
+            </select>
+          </div>
+          <div class="form-group hidden" id="widget-stats-group">
+            <label class="check-row"><input type="checkbox" id="widget-stats-check" /> Show totals under the chart</label>
           </div>
           <div class="form-group">
-            <label for="edit-entry-company">Company or problem name</label>
-            <input type="text" id="edit-entry-company" placeholder="Company or problem name" />
+            <label>Position</label>
+            <div class="widget-order-row">
+              <button type="button" id="widget-move-up-btn" class="btn-cancel">Move up</button>
+              <button type="button" id="widget-move-down-btn" class="btn-cancel">Move down</button>
+            </div>
           </div>
-          <div class="form-group">
-            <label for="edit-entry-role">Role or tag</label>
-            <input type="text" id="edit-entry-role" placeholder="Role or tag" />
-          </div>
-          <div class="form-group">
-            <label for="edit-entry-notes">Notes or URL</label>
-            <input type="text" id="edit-entry-notes" placeholder="Notes or URL" />
-          </div>
-          <div class="form-group hidden" id="edit-entry-time-group">
-            <label for="edit-entry-time">Solve time (mm:ss)</label>
-            <input type="text" id="edit-entry-time" placeholder="00:00" spellcheck="false" autocomplete="off" />
-          </div>
+          <p class="modal-note" id="widget-settings-hint"></p>
           <div class="modal-actions">
-            <button type="button" id="delete-entry-btn" class="account-signout-btn danger-left">Delete entry</button>
-            <button type="button" id="cancel-edit-entry-btn" class="btn-cancel">Cancel</button>
-            <button type="submit" class="btn-submit">Save Changes</button>
+            <button type="button" id="remove-widget-btn" class="account-signout-btn danger-left">Remove widget</button>
+            <button type="button" id="cancel-widget-settings-btn" class="btn-cancel">Cancel</button>
+            <button type="submit" class="btn-submit">Save</button>
           </div>
         </form>
       </div>
@@ -328,6 +292,7 @@
 
   <script src="../shared/auth.js"></script>
   <script src="../shared/storage.js"></script>
+  <script src="../shared/widgets.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

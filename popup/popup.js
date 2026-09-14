@@ -4,20 +4,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   let activeMetricId = 'jobs';
   let currentUser = null;
 
-  // Entry history state
-  let entriesRange = 'today';
-  let entriesExpanded = true;
-  let entryCache = {};
-  let entriesToken = 0;
   let lcStatsToken = 0;
 
-  // Modal state
-  let editingLogId = null;
-  let settingsMetricId = null;
-  let entryDeleteArmed = false;
-  let metricDeleteArmed = false;
+  // Widget layout (see shared/widgets.js). Rendered below the counter card.
+  let widgetItems = [];
+  const activityTokens = {};
 
-  const ENTRY_LIST_LIMIT = 25;
+  // Modal state
+  let settingsMetricId = null;
+  let metricDeleteArmed = false;
+  let settingsWidgetId = null;
+  let widgetRemoveArmed = false;
 
   const el = (id) => document.getElementById(id);
 
@@ -107,7 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Clicking the dimmed backdrop dismisses any modal
-  ['new-metric-modal', 'metric-settings-modal', 'edit-entry-modal', 'email-signin-modal'].forEach(id => {
+  ['new-metric-modal', 'metric-settings-modal', 'email-signin-modal', 'add-widget-modal', 'widget-settings-modal'].forEach(id => {
     const modal = el(id);
     if (modal) {
       modal.addEventListener('click', (e) => {
@@ -167,7 +164,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   let announcedFinishAt = null;
   let timerInputAtFocus = null;
 
-  const timerWidget = el('leetcode-timer-widget');
   const timerInput = el('timer-input');
   const timerToggleBtn = el('timer-toggle-btn');
   const timerResetBtn = el('timer-reset-btn');
@@ -494,9 +490,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadData() {
     await updateAuthUI();
-    [metrics, stats] = await Promise.all([
+    [metrics, stats, widgetItems] = await Promise.all([
       TrackerStorage.getMetrics(),
-      TrackerStorage.getStats()
+      TrackerStorage.getStats(),
+      WidgetLayout.load()
     ]);
     renderUI();
   }
@@ -505,22 +502,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const current = metrics.find(m => m.id === activeMetricId) || metrics[0];
     if (!current) return;
     activeMetricId = current.id;
-
-    // Show/hide timer widget and time stats
-    const lcTimeStats = el('leetcode-time-stats');
-    const lcTimeNote = el('leetcode-time-note');
-    if (timerWidget) {
-      if (activeMetricId === 'leetcode') {
-        timerWidget.classList.remove('hidden');
-        if (lcTimeStats) lcTimeStats.classList.remove('hidden');
-        updateTimerInputDisplay();
-        renderLeetcodeTimeStats();
-      } else {
-        timerWidget.classList.add('hidden');
-        if (lcTimeStats) lcTimeStats.classList.add('hidden');
-        if (lcTimeNote) lcTimeNote.classList.add('hidden');
-      }
-    }
 
     // Tabs
     const tabsContainer = el('metric-tabs');
@@ -548,9 +529,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Counter
     const todayCount = (stats && stats.today[activeMetricId]) || 0;
-    const weekCount = (stats && stats.thisWeek[activeMetricId]) || 0;
-    const monthCount = (stats && stats.thisMonth[activeMetricId]) || 0;
-    const totalCount = (stats && stats.totals[activeMetricId]) || 0;
 
     el('metric-count').textContent = todayCount;
     el('metric-unit-label').textContent = (current.unit || 'items') + ' logged today';
@@ -571,10 +549,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         : 'No active ' + current.name + ' streak. Log one today to start it.';
     }
 
-    el('stat-week').textContent = weekCount;
-    el('stat-month').textContent = monthCount;
-    el('stat-total').textContent = totalCount;
-
     // First-run guidance: only for an account with no data at all
     const firstRunCard = el('first-run-card');
     if (firstRunCard) {
@@ -586,35 +560,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    // Daily Goal progress
-    const dailyGoal = current.dailyGoal || (current.id === 'jobs' ? 5 : (current.id === 'leetcode' ? 2 : 1));
-    const goalTargetEl = el('goal-target-num');
-    if (goalTargetEl) {
-      goalTargetEl.textContent = dailyGoal;
-      goalTargetEl.setAttribute('aria-label', 'Daily goal for ' + current.name + ' is ' + dailyGoal + '. Select to change it.');
-    }
-
-    const goalStatusEl = el('goal-status-text');
-    if (goalStatusEl) {
-      if (todayCount >= dailyGoal) {
-        goalStatusEl.textContent = todayCount + ' / ' + dailyGoal + ' (Goal Met)';
-        goalStatusEl.style.color = '#1e8e3e';
-      } else {
-        goalStatusEl.textContent = todayCount + ' / ' + dailyGoal;
-        goalStatusEl.style.color = 'var(--text-main)';
-      }
-    }
-
-    const goalFillEl = el('goal-bar-fill');
-    if (goalFillEl) {
-      const pct = Math.min(100, Math.round((todayCount / dailyGoal) * 100));
-      goalFillEl.style.width = pct + '%';
-      goalFillEl.style.backgroundColor = todayCount >= dailyGoal ? '#1e8e3e' : current.color;
-      goalFillEl.classList.toggle('goal-met', todayCount >= dailyGoal);
-    }
-
-    renderEntries();
-    renderActivityChart();
+    renderWidgets();
   }
 
   // Consecutive days (ending today or yesterday) with at least one entry for a metric
@@ -651,8 +597,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       showStatus('Could not load solve-time stats: ' + errMsg(err), 'error');
       return;
     }
-    // Ignore a result that lost the race with a newer tab switch
-    if (token !== lcStatsToken || activeMetricId !== 'leetcode') return;
+    // Ignore a result that lost the race with a newer render, or whose widget
+    // has since been hidden or removed.
+    if (token !== lcStatsToken || !lcTimeStats.closest('.widget')) return;
 
     const timed = lcLogs.filter(l => (parseInt(l.solveTimeSeconds, 10) || 0) > 0);
     const bestSeconds = (typeof timeStats.bestSeconds === 'number' && timeStats.bestSeconds > 0)
@@ -877,64 +824,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     selectedColor = btn.dataset.color;
   });
 
-  async function renderActivityChart() {
-    const barsContainer = el('activity-bars');
-    if (!barsContainer) return;
-    const current = metrics.find(m => m.id === activeMetricId);
-    const color = current ? current.color : '#1a73e8';
-
-    const titleEl = el('activity-title');
-    if (titleEl && current) {
-      titleEl.textContent = '30-Day ' + current.name + ' Activity';
-    }
-
-    const history = await TrackerStorage.getActivityHistory(30, activeMetricId);
-
-    const totalEl = el('pop-act-total');
-    const avgEl = el('pop-act-avg');
-    const daysEl = el('pop-act-days');
-    const bestEl = el('pop-act-best');
-
-    if (totalEl) totalEl.textContent = history.totalCount;
-    if (avgEl) avgEl.textContent = history.dailyAverage;
-    if (daysEl) daysEl.textContent = history.activeDaysCount;
-    if (bestEl) bestEl.textContent = history.bestDay.count;
-
-    barsContainer.innerHTML = '';
-    const maxVal = Math.max(4, ...history.days.map(d => d.count));
-
-    history.days.forEach(day => {
-      const col = document.createElement('div');
-      col.className = 'pop-bar-col';
-
-      const heightPct = Math.round((day.count / maxVal) * 100);
-      const bar = document.createElement('div');
-      bar.className = 'pop-bar' + (day.count > 0 ? ' has-act' : '');
-      bar.style.height = (day.count > 0 ? Math.max(10, heightPct) : 4) + '%';
-      if (day.count > 0) {
-        bar.style.backgroundColor = color;
-      }
-
-      const tooltip = document.createElement('div');
-      tooltip.className = 'pop-bar-tooltip';
-      tooltip.textContent = day.label + ': ' + day.count;
-
-      col.appendChild(bar);
-      col.appendChild(tooltip);
-      barsContainer.appendChild(col);
-    });
-  }
-
-  el('toggle-activity-btn').addEventListener('click', () => {
-    const panel = el('activity-panel');
-    const arrow = el('activity-arrow');
-    panel.classList.toggle('hidden');
-    const isOpen = !panel.classList.contains('hidden');
-    arrow.classList.toggle('open', isOpen);
-    el('toggle-activity-btn').setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-    if (isOpen) renderActivityChart();
-  });
-
   el('new-metric-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = el('new-metric-name').value.trim();
@@ -963,310 +852,454 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
   });
 
-  /* ---------- Entry history (view, edit, delete) ---------- */
+  /* ---------- Widgets (add, remove, reorder, bind to a tracker) ---------- */
 
-  function rangeStartDate(range) {
-    const today = TrackerStorage.getLocalDateStr();
-    if (range === 'today') return today;
-    if (range === 'week') return TrackerStorage.addDays(today, -6);
-    if (range === 'month') return TrackerStorage.addDays(today, -29);
-    return null;
+  const widgetsHost = el('widgets-host');
+  const widgetParts = el('widget-parts');
+  const GEAR_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
+
+  function metricFor(item) {
+    const id = WidgetLayout.resolveMetricId(item, activeMetricId, metrics);
+    return metrics.find(m => m.id === id) || metrics.find(m => m.id === activeMetricId) || metrics[0];
   }
 
-  function rangeLabel(range) {
-    if (range === 'today') return 'today';
-    if (range === 'week') return 'in the last 7 days';
-    if (range === 'month') return 'in the last 30 days';
-    return 'yet';
+  function goalFor(metric) {
+    return metric.dailyGoal || (metric.id === 'jobs' ? 5 : (metric.id === 'leetcode' ? 2 : 1));
   }
 
-  function formatEntryTime(timestamp) {
-    if (!timestamp) return '';
-    const d = new Date(timestamp);
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  // Pinned widgets say which tracker they show; widgets that follow the tab
+  // stay unlabeled so the common layout does not repeat the tab name.
+  function pinLabel(item, metric) {
+    return item.options.metricId !== WidgetLayout.ACTIVE ? metric.name : '';
   }
 
-  function formatEntryDate(dateStr) {
-    const today = TrackerStorage.getLocalDateStr();
-    if (dateStr === today) return 'Today';
-    if (dateStr === TrackerStorage.addDays(today, -1)) return 'Yesterday';
-    const d = TrackerStorage.parseLocalDateToNoon(dateStr);
-    const opts = { month: 'short', day: 'numeric' };
-    // Older-than-this-year entries surface in the All Time range; keep them unambiguous
-    if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
-    return d.toLocaleDateString(undefined, opts);
+  function widgetShell(item) {
+    const wrap = document.createElement('section');
+    wrap.className = 'widget widget-' + item.type;
+    wrap.dataset.widgetId = item.id;
+    wrap.dataset.widgetType = item.type;
+    const tools = document.createElement('div');
+    tools.className = 'widget-tools';
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'widget-edit-btn';
+    edit.title = 'Customize widget';
+    edit.setAttribute('aria-label', 'Customize ' + WidgetLayout.TYPES[item.type].name + ' widget');
+    edit.innerHTML = GEAR_SVG;
+    tools.appendChild(edit);
+    const body = document.createElement('div');
+    body.className = 'widget-body';
+    wrap.appendChild(body);
+    wrap.appendChild(tools);
+    return wrap;
   }
 
-  function buildEntryRow(log, metric) {
-    const row = document.createElement('div');
-    row.className = 'goal-meter entry-row';
-    row.dataset.id = log.id;
-    row.setAttribute('role', 'button');
-    row.setAttribute('tabindex', '0');
+  // Singleton parts are moved, not cloned, so the timer's input state and
+  // every listener bound at startup keep working wherever the widget sits.
+  function placePart(body, partId) {
+    const part = el(partId);
+    if (!part) return null;
+    if (part.parentElement !== body) body.appendChild(part);
+    return part;
+  }
 
-    const head = document.createElement('div');
-    head.className = 'goal-header';
+  function parkPart(partId) {
+    const part = el(partId);
+    if (part && widgetParts && part.parentElement !== widgetParts) widgetParts.appendChild(part);
+  }
 
-    const title = document.createElement('span');
-    title.className = 'goal-label entry-title';
-    title.textContent = log.company || (metric ? metric.name : log.metricId);
+  const PART_IDS = { timer: 'leetcode-timer-widget', timeStats: 'leetcode-time-block', details: 'details-section' };
 
-    const when = document.createElement('span');
-    when.className = 'goal-status entry-when';
-    const timeText = formatEntryTime(log.timestamp);
-    when.textContent = formatEntryDate(log.date) + (timeText ? ' ' + timeText : '');
-
-    head.appendChild(title);
-    head.appendChild(when);
-
-    const parts = [];
-    if (log.role) parts.push(log.role);
-    if (log.notes) parts.push(log.notes);
-    const solveSeconds = parseInt(log.solveTimeSeconds, 10) || 0;
-    // The quick-add path already writes the solve time into notes; do not repeat it
-    if (solveSeconds > 0 && !/solve time/i.test(log.notes || '')) {
-      parts.push('Solve time: ' + TrackerStorage.formatTimeHMS(solveSeconds));
-    }
-    if ((log.count || 1) > 1) parts.push('Count: ' + log.count);
-
-    const sub = document.createElement('div');
-    sub.className = 'timer-hint entry-sub';
-    sub.textContent = parts.length > 0 ? parts.join(' · ') : 'No details yet. Select to add a company, role, or notes.';
-
-    row.appendChild(head);
-    row.appendChild(sub);
-    row.setAttribute('aria-label', 'Edit entry: ' + title.textContent + ', ' + when.textContent + '. ' + sub.textContent);
-
-    row.addEventListener('click', () => openEntryEditor(log.id));
-    row.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
-        e.preventDefault();
-        openEntryEditor(log.id);
+  const WIDGET_RENDERERS = {
+    goal(body, item, metric) {
+      const todayCount = (stats && stats.today[metric.id]) || 0;
+      const goal = goalFor(metric);
+      const met = todayCount >= goal;
+      const pin = pinLabel(item, metric);
+      if (!body.firstChild) {
+        body.innerHTML = [
+          '<div class="goal-meter">',
+            '<div class="goal-header">',
+              '<span class="goal-label"><span class="widget-pin"></span>Daily Goal: <strong class="goal-target-num" role="button" tabindex="0" title="Open tracker settings (daily goal)"></strong></span>',
+              '<span class="goal-status"></span>',
+            '</div>',
+            '<div class="goal-bar-wrap"><div class="goal-bar-fill"></div></div>',
+          '</div>'
+        ].join('');
       }
-    });
-    return row;
-  }
+      body.querySelector('.widget-pin').textContent = pin ? pin + ' ' : '';
+      const target = body.querySelector('.goal-target-num');
+      target.textContent = goal;
+      target.setAttribute('aria-label', 'Daily goal for ' + metric.name + ' is ' + goal + '. Select to change it.');
+      const status = body.querySelector('.goal-status');
+      status.textContent = todayCount + ' / ' + goal + (met ? ' (Goal Met)' : '');
+      status.style.color = met ? '#1e8e3e' : 'var(--text-main)';
+      const fill = body.querySelector('.goal-bar-fill');
+      fill.style.width = Math.min(100, Math.round((todayCount / goal) * 100)) + '%';
+      fill.style.backgroundColor = met ? '#1e8e3e' : metric.color;
+      fill.classList.toggle('goal-met', met);
+    },
 
-  async function renderEntries() {
-    const list = el('entries-list');
-    if (!list) return;
+    summary(body, item, metric) {
+      if (!body.firstChild) {
+        body.innerHTML = [
+          '<div class="summary-stats">',
+            '<div class="stat-item"><span class="stat-value" data-stat="week">0</span><span class="stat-name">This Week</span></div>',
+            '<div class="stat-divider"></div>',
+            '<div class="stat-item"><span class="stat-value" data-stat="month">0</span><span class="stat-name">This Month</span></div>',
+            '<div class="stat-divider"></div>',
+            '<div class="stat-item"><span class="stat-value" data-stat="total">0</span><span class="stat-name">Total</span></div>',
+          '</div>',
+          '<div class="widget-caption"></div>'
+        ].join('');
+      }
+      body.querySelector('[data-stat="week"]').textContent = (stats && stats.thisWeek[metric.id]) || 0;
+      body.querySelector('[data-stat="month"]').textContent = (stats && stats.thisMonth[metric.id]) || 0;
+      body.querySelector('[data-stat="total"]').textContent = (stats && stats.totals[metric.id]) || 0;
+      const cap = body.querySelector('.widget-caption');
+      const pin = pinLabel(item, metric);
+      cap.textContent = pin;
+      cap.classList.toggle('hidden', !pin);
+    },
 
-    const current = metrics.find(m => m.id === activeMetricId);
-    const titleEl = el('entries-title');
-    if (titleEl) {
-      titleEl.textContent = current ? 'Recent ' + current.name + ' Entries' : 'Recent Entries';
+    streak(body, item, metric) {
+      if (!body.firstChild) {
+        body.innerHTML = [
+          '<div class="summary-stats">',
+            '<div class="stat-item"><span class="stat-value" data-stat="current">0</span><span class="stat-name">Current Streak</span></div>',
+            '<div class="stat-divider"></div>',
+            '<div class="stat-item"><span class="stat-value" data-stat="best">0</span><span class="stat-name">Longest Streak</span></div>',
+          '</div>',
+          '<div class="widget-caption"></div>'
+        ].join('');
+      }
+      const current = computeStreak(metric.id);
+      body.querySelector('[data-stat="current"]').textContent = current;
+      body.querySelector('[data-stat="best"]').textContent = Math.max(current, computeLongestStreak(metric.id));
+      const cap = body.querySelector('.widget-caption');
+      const pin = pinLabel(item, metric);
+      cap.textContent = pin ? pin + ' (days)' : '';
+      cap.classList.toggle('hidden', !pin);
+    },
+
+    activity(body, item, metric) {
+      const days = item.options.days;
+      if (!body.firstChild) {
+        body.innerHTML = [
+          '<div class="activity-section">',
+            '<button class="activity-toggle" type="button" aria-expanded="true">',
+              '<span class="activity-title"></span>',
+              '<span class="arrow-down open"></span>',
+            '</button>',
+            '<div class="activity-panel">',
+              '<div class="activity-bars"></div>',
+              '<div class="activity-stats-grid">',
+                '<div><div class="act-stat-num" data-stat="total">0</div><div class="act-stat-lbl"></div></div>',
+                '<div><div class="act-stat-num" data-stat="avg">0.0</div><div class="act-stat-lbl">Daily Avg</div></div>',
+                '<div><div class="act-stat-num" data-stat="days">0</div><div class="act-stat-lbl">Active Days</div></div>',
+                '<div><div class="act-stat-num" data-stat="best">0</div><div class="act-stat-lbl">Best Day</div></div>',
+              '</div>',
+            '</div>',
+          '</div>'
+        ].join('');
+      }
+      body.querySelector('.activity-title').textContent = days + '-Day ' + metric.name + ' Activity';
+      const collapsed = !!item.options.collapsed;
+      body.querySelector('.activity-toggle').setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      body.querySelector('.arrow-down').classList.toggle('open', !collapsed);
+      const panel = body.querySelector('.activity-panel');
+      panel.classList.toggle('hidden', collapsed);
+      const grid = body.querySelector('.activity-stats-grid');
+      grid.classList.toggle('hidden', !item.options.showStats);
+      grid.querySelector('[data-stat="total"]').nextElementSibling.textContent = days + 'D Total';
+      if (collapsed) return;
+      renderActivityBars(body, item, metric);
+    },
+
+    timer(body) {
+      placePart(body, PART_IDS.timer);
+      updateTimerInputDisplay();
+    },
+
+    timeStats(body) {
+      placePart(body, PART_IDS.timeStats);
+      renderLeetcodeTimeStats();
+    },
+
+    details(body) {
+      placePart(body, PART_IDS.details);
     }
+  };
 
-    const rangeBar = el('entries-range-bar');
-    if (rangeBar) {
-      rangeBar.querySelectorAll('.tab-item').forEach(btn => {
-        const isOn = btn.dataset.range === entriesRange;
-        btn.classList.toggle('active', isOn);
-        btn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
-      });
-    }
-
-    if (!entriesExpanded) return;
-
-    const filter = { metricId: activeMetricId };
-    const start = rangeStartDate(entriesRange);
-    if (start) filter.startDate = start;
-
-    const token = ++entriesToken;
-    let logs;
+  async function renderActivityBars(body, item, metric) {
+    const token = (activityTokens[item.id] || 0) + 1;
+    activityTokens[item.id] = token;
+    let history;
     try {
-      logs = await TrackerStorage.getLogs(filter);
+      history = await TrackerStorage.getActivityHistory(item.options.days, metric.id);
     } catch (err) {
-      showStatus('Could not load your entries: ' + errMsg(err), 'error');
+      showStatus('Could not load activity: ' + errMsg(err), 'error');
       return;
     }
-    // A newer render (tab switch, range change) already superseded this one
-    if (token !== entriesToken) return;
+    // A newer render for this widget, or its removal, wins.
+    if (activityTokens[item.id] !== token || !body.isConnected) return;
 
-    entryCache = {};
-    list.innerHTML = '';
-    const footnote = el('entries-footnote');
+    body.querySelector('[data-stat="total"]').textContent = history.totalCount;
+    body.querySelector('[data-stat="avg"]').textContent = history.dailyAverage;
+    body.querySelector('[data-stat="days"]').textContent = history.activeDaysCount;
+    body.querySelector('[data-stat="best"]').textContent = history.bestDay.count;
 
-    if (logs.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'timer-hint entries-empty';
-      empty.textContent = 'No ' + (current ? current.name : 'tracker') + ' entries ' + rangeLabel(entriesRange)
-        + '. Log one above, or widen the range.';
-      list.appendChild(empty);
-      if (footnote) footnote.textContent = '';
-      return;
-    }
-
-    const shown = logs.slice(0, ENTRY_LIST_LIMIT);
-    shown.forEach(log => {
-      entryCache[log.id] = log;
-      list.appendChild(buildEntryRow(log, current));
+    const bars = body.querySelector('.activity-bars');
+    bars.innerHTML = '';
+    const maxVal = Math.max(4, ...history.days.map(d => d.count));
+    history.days.forEach(day => {
+      const col = document.createElement('div');
+      col.className = 'pop-bar-col';
+      const bar = document.createElement('div');
+      bar.className = 'pop-bar' + (day.count > 0 ? ' has-act' : '');
+      bar.style.height = (day.count > 0 ? Math.max(10, Math.round((day.count / maxVal) * 100)) : 4) + '%';
+      if (day.count > 0) bar.style.backgroundColor = metric.color;
+      const tooltip = document.createElement('div');
+      tooltip.className = 'pop-bar-tooltip';
+      tooltip.textContent = day.label + ': ' + day.count;
+      col.appendChild(bar);
+      col.appendChild(tooltip);
+      bars.appendChild(col);
     });
-
-    if (footnote) {
-      const totalCount = logs.reduce((sum, l) => sum + (l.count || 1), 0);
-      footnote.textContent = shown.length < logs.length
-        ? 'Showing the newest ' + shown.length + ' of ' + logs.length + ' entries (' + totalCount + ' logged). Select an entry to edit or delete it.'
-        : logs.length + ' entr' + (logs.length === 1 ? 'y' : 'ies') + ' (' + totalCount + ' logged). Select an entry to edit or delete it.';
-    }
   }
 
-  el('toggle-entries-btn').addEventListener('click', () => {
-    const panel = el('entries-panel');
-    entriesExpanded = panel.classList.contains('hidden');
-    panel.classList.toggle('hidden', !entriesExpanded);
-    el('entries-arrow').classList.toggle('open', entriesExpanded);
-    el('toggle-entries-btn').setAttribute('aria-expanded', entriesExpanded ? 'true' : 'false');
-    if (entriesExpanded) renderEntries();
-  });
-
-  el('entries-range-bar').addEventListener('click', (e) => {
-    const btn = e.target.closest('.tab-item');
-    if (!btn || !btn.dataset.range) return;
-    entriesRange = btn.dataset.range;
-    renderEntries();
-  });
-
-  function openEntryEditor(logId) {
-    const log = entryCache[logId];
-    if (!log) {
-      showStatus('That entry is no longer available. Refreshing the list.', 'error');
-      loadData();
-      return;
-    }
-    editingLogId = logId;
-    entryDeleteArmed = false;
-    el('delete-entry-btn').textContent = 'Delete entry';
-
-    const metric = metrics.find(m => m.id === log.metricId);
-    const timeText = formatEntryTime(log.timestamp);
-    el('edit-entry-context').textContent = (metric ? metric.name : log.metricId) + ' · '
-      + formatEntryDate(log.date) + (timeText ? ' ' + timeText : '');
-    el('edit-entry-company').value = log.company || '';
-    el('edit-entry-role').value = log.role || '';
-    el('edit-entry-notes').value = log.notes || '';
-
-    const solveSeconds = parseInt(log.solveTimeSeconds, 10) || 0;
-    const timeGroup = el('edit-entry-time-group');
-    if (log.metricId === 'leetcode' || solveSeconds > 0) {
-      timeGroup.classList.remove('hidden');
-      el('edit-entry-time').value = TrackerStorage.formatSecondsToMMSS(solveSeconds);
-    } else {
-      timeGroup.classList.add('hidden');
-      el('edit-entry-time').value = '00:00';
-    }
-
-    openModal(el('edit-entry-modal'), 'edit-entry-company');
+  // Longest run of consecutive days with at least one entry, over all history.
+  function computeLongestStreak(metricId) {
+    const dailyMap = (stats && stats.dailyMap) || {};
+    const dates = Object.keys(dailyMap).filter(d => (dailyMap[d][metricId] || 0) > 0).sort();
+    let best = 0;
+    let run = 0;
+    let prev = null;
+    dates.forEach(d => {
+      run = prev && TrackerStorage.addDays(prev, 1) === d ? run + 1 : 1;
+      if (run > best) best = run;
+      prev = d;
+    });
+    return best;
   }
 
-  // Prefer a real in-place update; fall back to re-create + remove when the
-  // storage layer has no updateLog. The replacement is written first so a
-  // failure can never destroy the original entry.
-  async function persistEntryEdit(original, patch) {
-    if (typeof TrackerStorage.updateLog === 'function') {
-      const updated = await TrackerStorage.updateLog(original.id, patch);
-      return updated !== false && updated !== null;
-    }
+  // Reconciles the host against the layout: wrappers are created for new
+  // items, removed for deleted ones, and re-appended in layout order (moving
+  // a node keeps its contents). Then every visible widget is repainted.
+  function renderWidgets() {
+    if (!widgetsHost) return;
+    const existing = {};
+    Array.from(widgetsHost.children).forEach(node => { existing[node.dataset.widgetId] = node; });
+    const keep = new Set();
 
-    const replacement = await TrackerStorage.addLog({
-      metricId: original.metricId,
-      count: original.count || 1,
-      date: original.date,
-      company: patch.company,
-      role: patch.role,
-      notes: patch.notes,
-      solveTimeSeconds: patch.solveTimeSeconds
+    widgetItems.forEach(item => {
+      const metric = metricFor(item);
+      if (!metric) return;
+      const visible = WidgetLayout.isVisible(item, metric.id);
+      let wrap = existing[item.id];
+      if (!visible) {
+        if (PART_IDS[item.type]) parkPart(PART_IDS[item.type]);
+        if (wrap) wrap.remove();
+        return;
+      }
+      if (!wrap) wrap = widgetShell(item);
+      keep.add(item.id);
+      widgetsHost.appendChild(wrap);
+      WIDGET_RENDERERS[item.type](wrap.querySelector('.widget-body'), item, metric);
     });
-    if (!replacement || !replacement.id) return false;
 
-    const removed = await TrackerStorage.deleteLog(original.id);
-    if (!removed) {
-      // Roll the copy back so an edit can never silently duplicate an entry
-      await TrackerStorage.deleteLog(replacement.id);
+    Object.keys(existing).forEach(id => {
+      if (keep.has(id)) return;
+      const node = existing[id];
+      const type = node.dataset.widgetType;
+      if (PART_IDS[type]) parkPart(PART_IDS[type]);
+      node.remove();
+    });
+
+    const note = el('leetcode-time-note');
+    if (note && !note.closest('.widget')) note.classList.add('hidden');
+  }
+
+  function widgetById(id) {
+    return widgetItems.find(i => i.id === id) || null;
+  }
+
+  async function applyLayout(promise, successMessage) {
+    try {
+      widgetItems = await promise;
+    } catch (err) {
+      showStatus('Could not update widgets: ' + errMsg(err), 'error');
       return false;
     }
+    renderWidgets();
+    if (successMessage) showStatus(successMessage, 'ok');
     return true;
   }
 
-  el('edit-entry-form').addEventListener('submit', async (e) => {
+  // One delegated listener covers every widget: the gear, the collapsible
+  // chart header, and the goal number that opens tracker settings.
+  widgetsHost.addEventListener('click', (e) => {
+    const wrap = e.target.closest('.widget');
+    if (!wrap) return;
+    const item = widgetById(wrap.dataset.widgetId);
+    if (!item) return;
+    if (e.target.closest('.widget-edit-btn')) {
+      openWidgetSettings(item.id);
+      return;
+    }
+    if (e.target.closest('.activity-toggle')) {
+      applyLayout(WidgetLayout.update(item.id, { collapsed: !item.options.collapsed }));
+      return;
+    }
+    if (e.target.closest('.goal-target-num')) {
+      openMetricSettings(metricFor(item).id);
+    }
+  });
+
+  widgetsHost.addEventListener('keydown', (e) => {
+    if (!(e.key === 'Enter' || e.key === ' ' || e.code === 'Space')) return;
+    const target = e.target.closest('.goal-target-num');
+    if (!target) return;
     e.preventDefault();
-    const original = entryCache[editingLogId];
-    if (!original) {
-      showStatus('That entry is no longer available.', 'error');
-      closeModal(el('edit-entry-modal'));
-      await loadData();
-      return;
-    }
-
-    const timeGroup = el('edit-entry-time-group');
-    const solveSeconds = timeGroup.classList.contains('hidden')
-      ? (parseInt(original.solveTimeSeconds, 10) || 0)
-      : TrackerStorage.parseStringToSeconds(el('edit-entry-time').value);
-
-    const patch = {
-      company: el('edit-entry-company').value.trim(),
-      role: el('edit-entry-role').value.trim(),
-      notes: el('edit-entry-notes').value.trim(),
-      solveTimeSeconds: solveSeconds
-    };
-
-    let ok = false;
-    try {
-      ok = await persistEntryEdit(original, patch);
-    } catch (err) {
-      showStatus('Could not save your changes: ' + errMsg(err), 'error');
-      return;
-    }
-    if (!ok) {
-      showStatus('Could not save your changes. The entry was left untouched.', 'error');
-      return;
-    }
-
-    editingLogId = null;
-    closeModal(el('edit-entry-modal'));
-    showStatus('Entry updated.', 'ok');
-    notifyCalendarTabs();
-    await loadData();
+    const wrap = target.closest('.widget');
+    const item = wrap ? widgetById(wrap.dataset.widgetId) : null;
+    if (item) openMetricSettings(metricFor(item).id);
   });
 
-  el('delete-entry-btn').addEventListener('click', async () => {
-    const btn = el('delete-entry-btn');
-    if (!entryDeleteArmed) {
-      // Two-step confirm: popups cannot rely on window.confirm staying open
-      entryDeleteArmed = true;
+  /* Add widget picker */
+  function renderWidgetPicker() {
+    const list = el('add-widget-list');
+    list.innerHTML = '';
+    WidgetLayout.availableTypes(widgetItems).forEach(t => {
+      const row = document.createElement('div');
+      row.className = 'widget-picker-row';
+      const text = document.createElement('div');
+      text.className = 'widget-picker-text';
+      const name = document.createElement('div');
+      name.className = 'widget-picker-name';
+      name.textContent = t.name;
+      const desc = document.createElement('div');
+      desc.className = 'widget-picker-desc';
+      desc.textContent = t.description;
+      text.appendChild(name);
+      text.appendChild(desc);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn-sm-primary';
+      btn.textContent = t.added ? 'Added' : 'Add';
+      btn.disabled = t.added;
+      btn.addEventListener('click', async () => {
+        const ok = await applyLayout(WidgetLayout.add(t.type, { metricId: WidgetLayout.ACTIVE }), t.name + ' widget added.');
+        if (ok) closeModal(el('add-widget-modal'));
+      });
+      row.appendChild(text);
+      row.appendChild(btn);
+      list.appendChild(row);
+    });
+  }
+
+  el('add-widget-btn').addEventListener('click', () => {
+    renderWidgetPicker();
+    openModal(el('add-widget-modal'));
+  });
+  el('close-add-widget-modal').addEventListener('click', () => closeModal(el('add-widget-modal')));
+
+  /* Widget settings */
+  function openWidgetSettings(id) {
+    const item = widgetById(id);
+    if (!item) return;
+    settingsWidgetId = id;
+    widgetRemoveArmed = false;
+    const spec = WidgetLayout.TYPES[item.type];
+    const bindable = 'metricId' in spec.defaults;
+
+    el('widget-settings-title').textContent = spec.name;
+    el('widget-metric-group').classList.toggle('hidden', !bindable);
+    if (bindable) {
+      const select = el('widget-metric-select');
+      select.innerHTML = '';
+      const follow = document.createElement('option');
+      follow.value = WidgetLayout.ACTIVE;
+      follow.textContent = 'Follow the selected tab';
+      select.appendChild(follow);
+      metrics.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = 'Always ' + m.name;
+        select.appendChild(opt);
+      });
+      select.value = metrics.some(m => m.id === item.options.metricId) ? item.options.metricId : WidgetLayout.ACTIVE;
+    }
+
+    const isActivity = item.type === 'activity';
+    el('widget-days-group').classList.toggle('hidden', !isActivity);
+    el('widget-stats-group').classList.toggle('hidden', !isActivity);
+    if (isActivity) {
+      el('widget-days-select').value = String(item.options.days);
+      el('widget-stats-check').checked = !!item.options.showStats;
+    }
+
+    const index = widgetItems.findIndex(i => i.id === id);
+    el('widget-move-up-btn').disabled = index <= 0;
+    el('widget-move-down-btn').disabled = index >= widgetItems.length - 1;
+
+    el('remove-widget-btn').textContent = 'Remove widget';
+    el('widget-settings-hint').textContent = spec.leetcodeOnly
+      ? 'This widget only appears while the LeetCode tracker is selected.'
+      : (spec.singleton ? 'Removing this widget hides it; add it back any time from the plus button.' : 'Removing a widget never deletes any logged data.');
+
+    openModal(el('widget-settings-modal'), bindable ? 'widget-metric-select' : 'widget-move-up-btn');
+  }
+
+  async function moveSettingsWidget(delta) {
+    if (!settingsWidgetId) return;
+    const ok = await applyLayout(WidgetLayout.move(settingsWidgetId, delta));
+    if (!ok) return;
+    const index = widgetItems.findIndex(i => i.id === settingsWidgetId);
+    el('widget-move-up-btn').disabled = index <= 0;
+    el('widget-move-down-btn').disabled = index >= widgetItems.length - 1;
+  }
+
+  el('widget-move-up-btn').addEventListener('click', () => moveSettingsWidget(-1));
+  el('widget-move-down-btn').addEventListener('click', () => moveSettingsWidget(1));
+
+  el('widget-settings-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const item = widgetById(settingsWidgetId);
+    if (!item) { closeModal(el('widget-settings-modal')); return; }
+    const patch = {};
+    if ('metricId' in WidgetLayout.TYPES[item.type].defaults) patch.metricId = el('widget-metric-select').value;
+    if (item.type === 'activity') {
+      patch.days = parseInt(el('widget-days-select').value, 10);
+      patch.showStats = el('widget-stats-check').checked;
+    }
+    const ok = await applyLayout(WidgetLayout.update(item.id, patch), 'Widget updated.');
+    if (ok) closeModal(el('widget-settings-modal'));
+  });
+
+  // Two-step remove, same pattern as deleting a tracker.
+  el('remove-widget-btn').addEventListener('click', async () => {
+    const btn = el('remove-widget-btn');
+    if (!widgetRemoveArmed) {
+      widgetRemoveArmed = true;
       btn.textContent = 'Select again to confirm';
-      showStatus('Select "Select again to confirm" to permanently delete this entry.', 'error');
       return;
     }
-    const target = editingLogId;
-    let removed = false;
-    try {
-      removed = await TrackerStorage.deleteLog(target);
-    } catch (err) {
-      showStatus('Could not delete that entry: ' + errMsg(err), 'error');
-      return;
-    }
-    entryDeleteArmed = false;
-    btn.textContent = 'Delete entry';
-    if (!removed) {
-      showStatus('That entry could not be deleted. It may already be gone.', 'error');
-    } else {
-      showStatus('Entry deleted.', 'ok');
-    }
-    editingLogId = null;
-    closeModal(el('edit-entry-modal'));
-    notifyCalendarTabs();
-    await loadData();
+    const target = settingsWidgetId;
+    settingsWidgetId = null;
+    widgetRemoveArmed = false;
+    btn.textContent = 'Remove widget';
+    const ok = await applyLayout(WidgetLayout.remove(target), 'Widget removed.');
+    if (ok) closeModal(el('widget-settings-modal'));
   });
 
-  el('close-edit-entry-modal').addEventListener('click', () => closeModal(el('edit-entry-modal')));
-  el('cancel-edit-entry-btn').addEventListener('click', () => closeModal(el('edit-entry-modal')));
+  el('close-widget-settings-modal').addEventListener('click', () => closeModal(el('widget-settings-modal')));
+  el('cancel-widget-settings-btn').addEventListener('click', () => closeModal(el('widget-settings-modal')));
 
   /* ---------- Tracker settings (daily goal, remove tracker) ---------- */
 
-  function openMetricSettings() {
-    const current = metrics.find(m => m.id === activeMetricId);
+  function openMetricSettings(metricId) {
+    const current = metrics.find(m => m.id === (metricId || activeMetricId));
     if (!current) return;
     settingsMetricId = current.id;
     metricDeleteArmed = false;
@@ -1283,17 +1316,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       : 'Deleting this tracker removes its tab. Entries you already logged stay in storage and in your exports.';
 
     openModal(el('metric-settings-modal'), 'metric-settings-goal');
-  }
-
-  const goalTargetBtn = el('goal-target-num');
-  if (goalTargetBtn) {
-    goalTargetBtn.addEventListener('click', openMetricSettings);
-    goalTargetBtn.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
-        e.preventDefault();
-        openMetricSettings();
-      }
-    });
   }
 
   el('metric-settings-form').addEventListener('submit', async (e) => {
@@ -1446,6 +1468,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Live sync from content script and auth changes
   TrackerStorage.onChanged(() => loadData());
+
+  // The widget layout has its own listener so the calendar overlay, which
+  // shares TrackerStorage.onChanged, never re-renders for a popup-only key.
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes[WidgetLayout.STORAGE_KEY]) return;
+      widgetItems = WidgetLayout.normalize(changes[WidgetLayout.STORAGE_KEY].newValue);
+      renderWidgets();
+    });
+  }
+
+  // Closing the popup tears down this script, but the countdown lives on as
+  // a deadline in storage (and as a background alarm). Read it back before
+  // the first render, and land on the LeetCode tab whenever a countdown is
+  // armed, running, paused, or finished so it is visible on reopen.
+  await hydrateTimer();
+  if (timerState.status !== 'idle' || timerState.targetSeconds > 0) {
+    activeMetricId = 'leetcode';
+  }
 
   // One quick token check per popup open: evicts an expired OAuth token and
   // re-prompts, so the user is never shown as signed in against a dead session.

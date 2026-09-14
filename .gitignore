@@ -11,3 +11,6 @@ Thumbs.db
 # Logs & temp
 *.log
 *.tmp
+
+# Claude Code local launch config
+.claude/

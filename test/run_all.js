@@ -13,6 +13,7 @@ const SUITES = [
   { name: 'Cross-Context Concurrency Suite', file: './concurrency.test.js' },
   { name: 'Solve Timer & Date Decoding Suite', file: './timer.test.js' },
   { name: 'Auto-Tracker Adapter & Dedupe Suite', file: './autotracker.test.js' },
+  { name: 'Popup Widget Layout Suite', file: './widgets.test.js' },
   { name: 'Zero-Emoji Compliance Suite', file: './emoji.test.js' },
   { name: 'Manifest V3 Validation Suite', file: './manifest.test.js' }
 ];

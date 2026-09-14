@@ -468,6 +468,19 @@ async function run() {
     teardown(content);
   }
 
+  // The popup is a fresh script on every open. Its countdown only survives a
+  // close if startup reads the persisted record back; this regressed once by
+  // defining hydrateTimer() and never calling it.
+  {
+    const popupSrc = fs.readFileSync(path.join(__dirname, '..', 'popup', 'popup.js'), 'utf8');
+    const calls = popupSrc.match(/await hydrateTimer\(\)/g) || [];
+    assert.ok(calls.length >= 1, 'popup.js must await hydrateTimer() on open');
+    const callIdx = popupSrc.indexOf('await hydrateTimer()');
+    const loadIdx = popupSrc.lastIndexOf('await loadData()');
+    assert.ok(callIdx >= 0 && callIdx < loadIdx, 'the countdown must be hydrated before the first render');
+    console.log('[PASS] Popup restores the persisted countdown before its first render');
+  }
+
   console.log('--- test/timer.test.js COMPLETED SUCCESSFULLY ---\n');
 }
 

@@ -915,48 +915,69 @@ body.pt-dark .modal-content.glass-card {
   letter-spacing: 0;
 }
 
-/* Calendar button */
+/* Calendar button: the one real action down here, so it gets the tinted
+   fill; everything else in the footer is deliberately quieter than it. */
 .calendar-btn {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: var(--blue-light);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  padding: 8px;
+  padding: 9px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-sec);
+  color: var(--blue-text);
   cursor: pointer;
-  transition: all 0.12s;
+  transition: background 0.12s, border-color 0.12s;
 }
 
 .calendar-btn:hover {
-  background: var(--hover);
-  color: var(--blue-text);
   border-color: var(--blue);
 }
 
-/* Footer stacks the calendar link above the export pair */
+/* Footer is its own band: a rule and real air above it, then the calendar
+   link above the export pair. */
 .footer {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
-/* Specificity has to beat .modal-actions, which this row also carries */
+/* Specificity has to beat .modal-actions, which this row also carries.
+   Exports are text-weight: no box of their own, a dot between them. */
 .footer .export-row {
   margin-top: 0;
-  gap: 6px;
+  gap: 0;
+  justify-content: center;
+  align-items: center;
 }
 
 .footer .export-row .btn-cancel {
-  flex: 1;
-  padding: 6px 10px;
-  color: var(--text-sec);
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: none;
+  background: none;
+  font-size: 11px;
   font-weight: 600;
+  color: var(--text-sec);
+  border-radius: 6px;
+}
+
+.footer .export-row .btn-cancel + .btn-cancel::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  margin: 0 12px 2px -6px;
+  vertical-align: middle;
 }
 
 .footer .export-row .btn-cancel:hover {
@@ -1162,10 +1183,12 @@ body.pt-dark .modal-content.glass-card {
   font-weight: 600;
 }
 
-/* 30-Day Activity Section */
+/* 30-Day Activity Section.
+   The chart and its four stats are ONE card: the bars sit on top and the
+   stats row hangs below a hairline, so the section reads as a single
+   summary instead of a stack of look-alike boxes. */
 .activity-section {
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
+  padding-top: 2px;
 }
 
 .activity-toggle {
@@ -1179,25 +1202,22 @@ body.pt-dark .modal-content.glass-card {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 2px 0;
+  padding: 4px 0;
 }
 
 .activity-panel {
-  margin-top: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  margin-top: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .activity-bars {
-  height: 44px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 4px 2px;
+  height: 60px;
+  padding: 10px 10px 6px;
   display: flex;
   align-items: flex-end;
-  gap: 2px;
+  gap: 3px;
 }
 
 .pop-bar-col {
@@ -1209,9 +1229,12 @@ body.pt-dark .modal-content.glass-card {
   cursor: pointer;
 }
 
+/* An empty day is a faint baseline tick, not a stub that competes with real
+   bars. */
 .pop-bar {
   width: 100%;
   background: var(--border);
+  opacity: 0.55;
   min-height: 2px;
   border-radius: 2px 2px 0 0;
   transition: height 0.15s;
@@ -1219,6 +1242,7 @@ body.pt-dark .modal-content.glass-card {
 
 .pop-bar.has-act {
   background: var(--blue);
+  opacity: 1;
 }
 
 .pop-bar-col:hover .pop-bar {
@@ -1245,19 +1269,32 @@ body.pt-dark .modal-content.glass-card {
   display: block;
 }
 
+/* Tooltips on the outer bars would otherwise run off the popup edge */
+.pop-bar-col:nth-child(-n+3) .pop-bar-tooltip {
+  left: 0;
+  transform: none;
+}
+
+.pop-bar-col:nth-last-child(-n+3) .pop-bar-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
 .activity-stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 5px 2px;
+  border-top: 1px solid var(--border);
+  padding: 8px 4px 9px;
   text-align: center;
 }
 
+.activity-stats-grid > div + div {
+  border-left: 1px solid var(--border);
+}
+
 .act-stat-num {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-main);
   line-height: 1.1;
@@ -1267,67 +1304,184 @@ body.pt-dark .modal-content.glass-card {
   font-size: 9px;
   color: var(--text-sec);
   text-transform: uppercase;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.3px;
   font-weight: 600;
-  margin-top: 1px;
+  margin-top: 3px;
 }
 
-/* Entry history list.
-   Rows reuse the .goal-meter card shell, so these rules only retune the
-   type hierarchy inside them: title first, timestamp second, details last. */
-.entries-range-bar {
-  margin-bottom: 6px;
-}
-
-.entries-list {
+/* Widgets.
+   Each widget is a plain wrapper with a gear that only shows on hover or
+   keyboard focus, so a finished layout looks exactly like a fixed one. */
+.widgets-host {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 176px;
+  gap: 10px;
+}
+
+.widgets-host:empty {
+  display: none;
+}
+
+.widget {
+  position: relative;
+}
+
+.widget-tools {
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.widget:hover .widget-tools,
+.widget:focus-within .widget-tools {
+  opacity: 1;
+}
+
+.widget-edit-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-page);
+  color: var(--text-sec);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.widget-edit-btn:hover {
+  color: var(--blue-text);
+  border-color: var(--blue);
+}
+
+/* Header-style widgets: the gear shares the header line with the collapse
+   arrow, so the toggle leaves room for it and the gear drops to that line. */
+.widget-activity .activity-toggle,
+.widget-details .details-toggle {
+  padding-right: 28px;
+}
+
+.widget-activity .widget-tools,
+.widget-details .widget-tools {
+  top: -1px;
+}
+
+.widget-pin {
+  color: var(--text-sec);
+  font-weight: 600;
+}
+
+.widget-caption {
+  margin-top: 4px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-sec);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 600;
+}
+
+/* Add-widget button: centered, dashed, the same idiom as the add-tracker plus */
+.add-widget-row {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0;
+}
+
+.add-widget-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-sec);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.add-widget-btn:hover {
+  background: var(--blue-light);
+  color: var(--blue-text);
+  border-color: var(--blue);
+  border-style: solid;
+}
+
+.widget-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 300px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
 }
 
-.entry-row {
-  cursor: pointer;
-  gap: 2px;
-  transition: background 0.12s, border-color 0.12s;
+.widget-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
 }
 
-.entry-row:hover {
-  background: var(--hover);
-  border-color: var(--text-muted);
-}
-
-.entry-title {
-  color: var(--text-main);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.widget-picker-text {
   min-width: 0;
 }
 
-.entry-when {
-  color: var(--text-sec);
-  font-weight: 500;
-  font-size: 10px;
-  flex-shrink: 0;
-  margin-left: 8px;
+.widget-picker-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
 }
 
-.entry-sub {
+.widget-picker-desc {
   font-size: 11px;
   color: var(--text-sec);
   line-height: 1.35;
+  margin-top: 1px;
 }
 
-.entries-empty {
-  text-align: center;
-  font-size: 11px;
-  color: var(--text-sec);
-  padding: 12px 8px;
+.widget-picker-row .btn-sm-primary {
+  flex-shrink: 0;
+}
+
+.widget-picker-row .btn-sm-primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.widget-order-row {
+  display: flex;
+  gap: 6px;
+}
+
+.widget-order-row .btn-cancel {
+  flex: 1;
+}
+
+.widget-order-row .btn-cancel:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-main);
+  cursor: pointer;
 }
 
 /* Destructive action sits opposite the confirm pair in a .modal-actions row */

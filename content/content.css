@@ -120,10 +120,6 @@
   background: #1a73e8;
 }
 
-.pt-bar.goal-hit {
-  background: #1e8e3e;
-}
-
 .pt-bar-tooltip {
   display: none;
   position: absolute;
