@@ -1,44 +1,133 @@
-# Locked in Tracker 
-Job & Activity Tracker for Google Calendar
+# Locked In Tracker
 
-## Tech Stack
+**Your job hunt and LeetCode grind, painted straight onto Google Calendar.**
 
-A Google Chrome extension to track daily job applications, LeetCode problems, and custom goals in real time. It's pretty cool. 
+A Chrome extension that counts applications sent and problems solved, shows every day's numbers on your calendar, and logs most of it for you automatically. Zero dependencies, zero polling, zero emojis.
+
+```
+  ┌───────────────────────────────────────────────────────────────────────┐
+  │  leetcode.com   neetcode.io   greenhouse   lever   ashby   workday    │
+  │       │              │            └────────┬─┴───────┴───────┘        │
+  │   Accepted        Passed /            Application submitted           │
+  │                   checkbox                                            │
+  └───────┬──────────────┬─────────────────────┬──────────────────────────┘
+          └──────────────┴──── adapters ───────┘
+                                │
+                     auto-tracker core: dedupe, toast
+                                │
+                        chrome.storage.local  ◄────  popup (+1 / -1, widgets)
+                                │
+                  Google Calendar overlay: badges, dock, timer
+```
 
 ---
 
-## Tech Stack
+## What it does
 
-### Platform & Core
-- **Platform**: Google Chrome Extensions (Manifest V3)
-- **Frontend Core**: Vanilla JavaScript (Modern ES6+), Semantic HTML5
-- **Styling**: pure CSS3 following Google's Material / Google Sans design language
-- **External Dependencies**: nada (0 runtime dependencies, no bundlers or node_modules required for execution)
+- **Counts what matters.** Job applications and LeetCode problems out of the box; add your own trackers (cold emails, system design reps, whatever) with their own color and daily goal.
+- **Lives on your calendar.** Each day on calendar.google.com gets a badge per tracker with the count and a goal-met state. A floating dock shows today at a glance, with a countdown timer for timed solves.
+- **Logs itself.** Submit an Accepted solution on LeetCode, pass a NeetCode run or tick a roadmap box, or land on a Greenhouse / Lever / Ashby / Workday confirmation page, and the entry is logged with a small in-page toast: `PulseTracker: Logged Two Sum (+1)`.
+- **Stays honest.** A dedupe cache keyed `<platform>:<slug>:<date>` means a refresh, a re-submit, or a second tab never double counts. Solving on LeetCode and then ticking it on NeetCode counts once.
+- **Times your solves.** Start a countdown in the popup or the calendar dock; it survives closing the popup and keeps going as a background alarm. Log the problem and the solve time is saved with it.
+- **Tracks streaks.** Consecutive active days per tracker, with a longest-streak widget if you want the pressure.
+- **Belongs to you.** Sign in with Google to scope data per account, flip dark mode, export everything as CSV or JSON.
 
-### Browser & Chrome Extension APIs
-- **chrome.storage.local**: local storage hardenedo prevent lost updates under concurrent operations
-- **chrome.identity**: Google Account OAuth2 integration with Google UserInfo API
-- **chrome.tabs & chrome.runtime**: better synchronization 
-- **chrome.action**: logging entries from any active tab 
+## Install
 
-### Calendar Overlay Engine
-- **DOM Reconciliation**:
-- **Google Calendar Date Decoding**: 
-  `(year - 1970) * 512 + (month - 1) * 32 + day + 32`
-- **Multi-Format Date Extraction** 
-- **Layer Stacking & Positioning**
+There is no build step.
 
-### Popup Widgets
-- The popup below the counter is a layout of widgets (Daily Goal, Week / Month / Total, Activity Chart, Streak, Solve Timer, Solve Time Stats, Add Details) persisted in `chrome.storage.local['pt_widgets']` by `shared/widgets.js`.
-- The centered plus button adds a widget; the gear that appears on hover opens its settings: bind it to one tracker or let it follow the selected tab, set chart length (7 / 14 / 30 days), move it up or down, or remove it. Multiple copies of a widget can be pinned to different trackers.
+1. Clone this repo.
+2. Open `chrome://extensions`, turn on **Developer mode**, choose **Load unpacked**, and pick the folder.
+3. Pin the extension. Open Google Calendar, LeetCode, or any supported job board and go.
 
-### Auto-Tracking Engine
-- **Plugin adapters**: one declarative `PlatformAdapter` per site (`content/adapters/`), registered with `shared/auto-tracker-core.js`. A new platform is a `matches(url)` plus an `init(onSuccess)` that returns its own teardown; ATS adapters are ~15 lines on top of `adapters/ats/confirmation.js`.
-- **Supported today**: LeetCode (Accepted submission), NeetCode (IDE pass, roadmap/practice checkbox), Greenhouse, Lever, Ashby, Workday (application confirmation).
-- **Zero polling**: no `setInterval`. Detection is armed by the user's own submit action, then a scoped `MutationObserver` watches only nodes added afterwards and disconnects on the first verdict. SPA navigation is tracked through the Navigation API, `popstate`, and `history` wrappers; adapters are remounted only when their route key changes.
-- **Deduplication**: `<platform>:<slug>:<YYYY-MM-DD>` keys in a TTL/LRU cache mirrored to `chrome.storage.session` (local fallback), so refreshes, re-submits, and sibling tabs cannot double count. NeetCode shares LeetCode's namespace, so ticking a problem you already solved on LeetCode does not count twice.
-- **Toast**: `PulseTracker: Logged Two Sum (+1)` rendered inside a closed Shadow DOM so host page CSS cannot touch it.
+Google sign-in needs an OAuth client in `manifest.json`; without one, the popup offers a direct email sign-in so you can still keep accounts separate.
 
-### Automated Testing & Verification
-- **Test Runner**: Native Node.js test framework (`node test/run_all.js`)
-- **In-Memory Harness**: Fully custom mock environment (`test/mock_chrome.js`) simulating Chrome Manifest V3 APIs without requiring heavy browser binaries
+## The popup
+
+The counter card at the top is fixed: big number, `+1`, `-1`. Everything under it is a **widget layout** you control.
+
+| Widget | What it shows |
+| --- | --- |
+| Daily Goal | Progress bar toward the tracker's goal; select the number to change it |
+| Week / Month / Total | Rolling counts |
+| Activity Chart | 7, 14, or 30 days of bars with total, average, active days, best day |
+| Streak | Current and longest run of consecutive days |
+| Solve Timer | Countdown for a problem (LeetCode tracker only) |
+| Solve Time Stats | Today, all time, average, fastest |
+| Add Details | Company, role, and notes for the next entry |
+
+The centered **+** adds a widget. Hover one and a gear appears: pin it to a tracker or let it follow the selected tab, set chart length, move it up or down, remove it. Pin two Activity Charts to two trackers and compare. The layout persists in `chrome.storage.local['pt_widgets']`.
+
+On the LeetCode tab, **Space** starts and pauses the timer when nothing else has focus.
+
+## How it works
+
+### Calendar overlay
+
+`content/content.js` finds day cells on Google Calendar and reconciles badges into them, re-rendering only what changed. Dates come from Calendar's own `data-datekey` attribute, decoded with
+
+```
+dateKey = (year - 1970) * 512 + (month - 1) * 32 + day + 32
+```
+
+with fallbacks for the other formats Calendar uses across views.
+
+### Auto-tracking
+
+One declarative adapter per site in `content/adapters/`, registered with `shared/auto-tracker-core.js`:
+
+```js
+core.registerAdapter({
+  id: 'leetcode',
+  metricId: 'leetcode',
+  matches: url => url.hostname.endsWith('leetcode.com') && /^\/problems\//.test(url.pathname),
+  routeKey: url => slugFrom(url),          // remount only when the problem changes
+  init(onSuccess, ctx) {                   // arm detection, return teardown
+    /* ... */
+  }
+});
+```
+
+Detection is armed by the user's own action (the Submit click, `Ctrl/Cmd+Enter`, a form submit), then a scoped `MutationObserver` inspects only nodes added afterwards and disconnects on the first verdict. No `setInterval` anywhere; a test asserts it. SPA navigation is followed through the Navigation API, `popstate`, and `history` wrappers, and an adapter is remounted only when its route key changes, so LeetCode's post-submit `pushState` does not tear down the observer that is waiting for the verdict.
+
+The four ATS adapters are each about fifteen lines on top of `content/adapters/ats/confirmation.js`, which knows the two ways an application ends: a confirmation URL (`/confirmation`, `/thanks`) or a "thank you for applying" block rendered in place after an interaction. Adding a new job board means writing `hosts`, a confirmation selector or text, and how to read the company and role.
+
+Dedupe keys live in a TTL / LRU cache mirrored to `chrome.storage.session` (with a local fallback), and the toast renders inside a closed Shadow DOM so host page CSS cannot restyle it.
+
+### Timers
+
+Countdowns are stored as a **deadline**, never a ticking counter. Every surface derives remaining time from the clock, and `background/service-worker.js` mirrors a running deadline into `chrome.alarms`, so a countdown finishes and notifies even with every page closed. The popup timer and the calendar dock timer are independent records.
+
+### Storage
+
+`shared/storage.js` wraps `chrome.storage.local` with a write queue and read-back verification, because the popup and the content script each hold their own copy of the module against one shared store and `chrome.storage` has no compare-and-swap. Logs carry the signed-in account so two Google accounts never see each other's data.
+
+## Tech
+
+- Chrome Extensions **Manifest V3**
+- Vanilla **ES6+** JavaScript, semantic HTML, hand-written CSS in the Google Sans / Material idiom, light and dark
+- `chrome.storage`, `chrome.identity`, `chrome.alarms`, `chrome.notifications`, `chrome.tabs`
+- **No runtime dependencies, no bundler, no `node_modules`**
+
+## Tests
+
+```bash
+node test/run_all.js
+```
+
+Eleven suites run in plain Node against an in-memory Chrome (`test/mock_chrome.js`) and a small DOM with an instrumented `MutationObserver` (`test/mock_dom.js`), so a leaked observer fails a test instead of a user's tab. Coverage includes storage math and concurrency, multi-account isolation, auth, the timer state machine, adapter URL matching and detection flows, the dedupe cache, widget layout rules, Manifest V3 validation, and a repository-wide emoji scan that must find nothing. See `TEST_READY.md` for the breakdown.
+
+## Layout
+
+```
+background/service-worker.js     alarms for countdowns, session-storage access for content scripts
+content/content.js               Google Calendar overlay and dock
+content/auto-tracker.js          mounts the adapter for the current URL, follows SPA navigation
+content/adapters/                leetcode.js, neetcode.js, ats/{confirmation,greenhouse,lever,ashby,workday}.js
+popup/                           popup UI and widget rendering
+shared/storage.js                logs, metrics, stats, streaks
+shared/auth.js                   Google sign-in and per-account scoping
+shared/auto-tracker-core.js      adapter registry, dedupe cache, toast, DOM helpers
+shared/widgets.js                widget registry and persisted layout
+test/                            the suite, plus the Chrome and DOM mocks
+```
