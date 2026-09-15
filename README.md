@@ -20,20 +20,6 @@ A Chrome extension that counts applications sent and problems solved, shows ever
                   Google Calendar overlay: badges, dock, timer
 ```
 
----
-
-## What it does
-
-- **Counts what matters.** Job applications and LeetCode problems out of the box; add your own trackers (cold emails, system design reps, whatever) with their own color and daily goal.
-- **Lives on your calendar.** Each day on calendar.google.com gets a badge per tracker with the count and a goal-met state. A floating dock shows today at a glance, with a countdown timer for timed solves.
-- **Logs itself.** Submit an Accepted solution on LeetCode, pass a NeetCode run or tick a roadmap box, or land on a Greenhouse / Lever / Ashby / Workday confirmation page, and the entry is logged with a small in-page toast: `PulseTracker: Logged Two Sum (+1)`.
-- **Stays honest.** A dedupe cache keyed `<platform>:<slug>:<date>` means a refresh, a re-submit, or a second tab never double counts. Solving on LeetCode and then ticking it on NeetCode counts once.
-- **Times your solves.** Start a countdown in the popup or the calendar dock; it survives closing the popup and keeps going as a background alarm. Log the problem and the solve time is saved with it.
-- **Tracks streaks.** Consecutive active days per tracker, with a longest-streak widget if you want the pressure.
-- **Belongs to you.** Sign in with Google to scope data per account, flip dark mode, export everything as CSV or JSON.
-
-## Install
-
 There is no build step.
 
 1. Clone this repo.
