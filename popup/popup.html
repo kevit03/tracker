@@ -77,18 +77,24 @@
          timer keeps its state and handlers because the node is MOVED into a
          widget, never rebuilt. -->
     <div id="widget-parts" hidden>
-    <div id="leetcode-timer-widget" class="timer-widget">
-      <div class="timer-header">
-        <span class="timer-title">Problem Solve Timer</span>
-        <span class="timer-hint">Click time to type</span>
+    <div id="leetcode-timer-widget" class="timer-widget" data-state="idle">
+      <div class="timer-top">
+        <span class="timer-title">Solve timer</span>
+        <span class="timer-status" id="timer-status" aria-live="polite">Set a length</span>
       </div>
-      <div class="timer-controls-row">
-        <div class="timer-input-wrap">
-          <input type="text" id="timer-input" class="timer-input" value="00:00" placeholder="00:00" spellcheck="false" autocomplete="off" />
+      <div class="timer-display">
+        <input type="text" id="timer-input" class="timer-input" value="00:00" placeholder="00:00" spellcheck="false" autocomplete="off" aria-label="Countdown length, minutes and seconds. Select to type a new length." />
+      </div>
+      <div class="timer-track" aria-hidden="true"><div class="timer-track-fill" id="timer-progress"></div></div>
+      <div class="timer-controls">
+        <div class="timer-presets" role="group" aria-label="Quick countdown lengths">
+          <button type="button" class="timer-preset" data-minutes="15">15m</button>
+          <button type="button" class="timer-preset" data-minutes="25">25m</button>
+          <button type="button" class="timer-preset" data-minutes="45">45m</button>
         </div>
-        <div class="timer-btn-group">
-          <button type="button" id="timer-toggle-btn" class="timer-btn timer-btn-start">Start</button>
-          <button type="button" id="timer-reset-btn" class="timer-btn timer-btn-reset">Reset</button>
+        <div class="timer-actions">
+          <button type="button" id="timer-reset-btn" class="timer-reset">Reset</button>
+          <button type="button" id="timer-toggle-btn" class="timer-toggle">Start</button>
         </div>
       </div>
     </div>

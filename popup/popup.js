@@ -219,16 +219,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // One render for every surface of the widget: the time, the status word,
+  // the progress track, the preset highlight, and the toggle's label.
   function renderTimer() {
     if (!timerInput || !timerToggleBtn) return;
     const running = isTimerRunning();
-    timerToggleBtn.textContent = running ? 'Pause' : 'Start';
+    const remaining = timerRemaining();
+    const target = timerState.targetSeconds;
+    const finished = timerState.status === 'finished';
+    const state = running ? 'running'
+      : finished ? 'finished'
+      : (timerState.status === 'paused' ? 'paused' : (remaining > 0 ? 'armed' : 'idle'));
+
+    const widget = el('leetcode-timer-widget');
+    if (widget) widget.dataset.state = state;
+
+    const status = el('timer-status');
+    if (status) {
+      status.textContent = {
+        idle: 'Set a length',
+        armed: 'Ready',
+        running: 'Running',
+        paused: 'Paused',
+        finished: 'Time is up'
+      }[state];
+    }
+
+    timerToggleBtn.textContent = running ? 'Pause' : (finished ? 'Restart' : 'Start');
     timerToggleBtn.classList.toggle('running', running);
+    timerToggleBtn.disabled = state === 'idle';
+
     // Never fight the user for the field while they are editing it.
     if (document.activeElement !== timerInput) {
-      timerInput.value = TrackerStorage.formatSecondsToMMSS(timerRemaining());
+      timerInput.value = TrackerStorage.formatSecondsToMMSS(remaining);
     }
-    timerInput.classList.toggle('timer-expired', timerState.status === 'finished');
+    timerInput.classList.toggle('timer-expired', finished);
+
+    const progress = el('timer-progress');
+    if (progress) {
+      const pct = target > 0 ? Math.min(100, Math.max(0, ((target - remaining) / target) * 100)) : 0;
+      progress.style.width = pct + '%';
+    }
+
+    document.querySelectorAll('.timer-preset').forEach(btn => {
+      const seconds = (parseInt(btn.dataset.minutes, 10) || 0) * 60;
+      btn.classList.toggle('is-active', target === seconds && target > 0);
+    });
   }
 
   // Kept for the existing call sites; rendering is now the whole job.
@@ -381,8 +417,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     return `Solve time: ${s}s`;
   }
 
-  timerToggleBtn.addEventListener('click', () => {
-    if (isTimerRunning()) pauseTimer(); else startTimer();
+  // Start, pause, or after a finished countdown, run the same length again.
+  async function toggleTimer() {
+    if (isTimerRunning()) { pauseTimer(); return; }
+    if (timerState.status === 'finished') await resetTimer();
+    startTimer();
+  }
+
+  timerToggleBtn.addEventListener('click', toggleTimer);
+
+  document.querySelectorAll('.timer-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const minutes = parseInt(btn.dataset.minutes, 10) || 0;
+      if (minutes > 0) armTimer(minutes * 60);
+    });
   });
 
   timerResetBtn.addEventListener('click', () => {
@@ -426,7 +474,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select' || activeTag === 'button') return;
     if (active && (active.isContentEditable || active.getAttribute('role') === 'button')) return;
     e.preventDefault();
-    if (isTimerRunning()) pauseTimer(); else startTimer();
+    toggleTimer();
   });
 
   async function updateAuthUI() {

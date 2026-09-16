@@ -216,18 +216,28 @@ button:disabled {
   font-weight: 600;
 }
 
-/* LeetCode Solve Timer */
+/* Solve timer.
+   A large tabular-figure readout you select to type into, a status word that
+   follows the state, a thin track that fills as time elapses, quick-length
+   presets, and one pill for Start / Pause / Restart. The card's accent
+   follows data-state: green running, amber paused, red once time is up. */
 .timer-widget {
+  --timer-accent: var(--text-muted);
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 8px 10px;
+  padding: 12px 14px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
-.timer-header {
+.timer-widget[data-state="armed"] { --timer-accent: var(--blue); }
+.timer-widget[data-state="running"] { --timer-accent: var(--green-strong); }
+.timer-widget[data-state="paused"] { --timer-accent: var(--amber); }
+.timer-widget[data-state="finished"] { --timer-accent: var(--red); }
+
+.timer-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -238,105 +248,208 @@ button:disabled {
   font-weight: 600;
   color: var(--text-sec);
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.4px;
 }
 
-.timer-hint {
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.timer-controls-row {
-  display: flex;
+.timer-status {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sec);
 }
 
-.timer-input-wrap {
-  flex: 1;
+.timer-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--timer-accent);
+}
+
+.timer-widget[data-state="running"] .timer-status::before {
+  animation: timer-dot 1.6s ease-in-out infinite;
+}
+
+@keyframes timer-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.timer-display {
+  display: flex;
+  justify-content: center;
 }
 
 .timer-input {
   width: 100%;
-  font-family: 'SF Mono', Consolas, Monaco, monospace;
-  font-size: 18px;
-  font-weight: 700;
+  max-width: 200px;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-family: var(--font);
+  font-size: 40px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -1px;
+  line-height: 1.1;
   text-align: center;
-  padding: 4px 8px;
-  background: var(--bg-input);
   color: var(--text-main);
-  border: 1px solid var(--border);
-  border-radius: 6px;
   outline: none;
-  letter-spacing: 1px;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  cursor: text;
+  transition: background 0.12s, color 0.2s;
+}
+
+.timer-input:hover {
+  background: var(--hover);
 }
 
 .timer-input:focus {
-  border-color: var(--green-strong);
-  box-shadow: 0 0 0 2px var(--green-ring);
+  background: var(--hover);
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
 }
 
-/* Countdown that has reached zero. This is a resting state, not a flash: the
-   countdown can finish while the popup is closed, so the field has to still be
-   saying so whenever the user next opens it. Cleared by Reset or a re-arm. */
+.timer-widget[data-state="finished"] .timer-input {
+  color: var(--red);
+}
+
+/* Time is up is a resting state, not a flash: the countdown can finish with
+   the popup closed and must still be saying so when it next opens. */
 .timer-input.timer-expired {
-  border-color: var(--red);
-  box-shadow: 0 0 0 2px var(--red-ring);
   animation: timer-expired-pulse 0.9s ease-in-out 3;
 }
 
 @keyframes timer-expired-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px var(--red-ring); }
-  50% { box-shadow: 0 0 0 5px var(--red-ring); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .timer-input.timer-expired { animation: none; }
+.timer-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
 }
 
-.timer-btn-group {
+.timer-track-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: var(--timer-accent);
+  transition: width 0.25s linear, background 0.2s;
+}
+
+.timer-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.timer-presets {
   display: flex;
   gap: 4px;
 }
 
-.timer-btn {
-  padding: 6px 12px;
-  border-radius: 6px;
+.timer-preset {
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-sec);
+  font-family: inherit;
   font-size: 11px;
   font-weight: 600;
+  line-height: 1;
   cursor: pointer;
-  border: none;
-  transition: all 0.12s;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
-.timer-btn-start {
+.timer-preset:hover {
+  border-color: var(--blue);
+  color: var(--blue-text);
+}
+
+.timer-preset.is-active {
+  background: var(--blue-light);
+  border-color: var(--blue);
+  color: var(--blue-text);
+}
+
+.timer-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.timer-reset {
+  padding: 6px 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-sec);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.timer-reset:hover {
+  background: var(--hover);
+  color: var(--text-main);
+}
+
+.timer-toggle {
+  min-width: 76px;
+  padding: 7px 16px;
+  border: none;
+  border-radius: 999px;
   background: var(--green-strong);
   color: var(--on-green);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, transform 0.12s, opacity 0.12s;
 }
 
-.timer-btn-start:hover {
+.timer-toggle:hover:not(:disabled) {
   background: var(--green-strong-hover);
 }
 
-.timer-btn-start.running {
+.timer-toggle.running {
   background: var(--amber);
   color: var(--on-amber);
 }
 
-.timer-btn-start.running:hover {
+.timer-toggle.running:hover:not(:disabled) {
   background: var(--amber-hover);
 }
 
-.timer-btn-reset {
-  background: var(--hover);
-  color: var(--text-sec);
-  border: 1px solid var(--border);
+.timer-toggle:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
-.timer-btn-reset:hover {
-  background: var(--border);
-  color: var(--text-main);
+.timer-toggle:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.timer-preset:focus-visible,
+.timer-reset:focus-visible,
+.timer-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-input.timer-expired { animation: none; }
+  .timer-widget[data-state="running"] .timer-status::before { animation: none; }
+  .timer-track-fill { transition: none; }
 }
 
 /* Glassmorphism. The card carries its own soft color field so the blur and
