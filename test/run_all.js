@@ -14,6 +14,7 @@ const SUITES = [
   { name: 'Solve Timer & Date Decoding Suite', file: './timer.test.js' },
   { name: 'Auto-Tracker Adapter & Dedupe Suite', file: './autotracker.test.js' },
   { name: 'Popup Widget Layout Suite', file: './widgets.test.js' },
+  { name: 'Calendar Overlay Suite', file: './calendar.test.js' },
   { name: 'Zero-Emoji Compliance Suite', file: './emoji.test.js' },
   { name: 'Manifest V3 Validation Suite', file: './manifest.test.js' }
 ];

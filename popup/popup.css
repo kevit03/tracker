@@ -157,11 +157,23 @@ button:disabled {
   gap: 6px;
 }
 
-.brand-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
+/* The padlock mark: the same lock as the toolbar icon, drawn inline so it
+   follows the theme (blue tile, lock in --on-blue). */
+.brand-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
   background: var(--blue);
+  color: var(--on-blue);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.brand-mark svg {
+  width: 14px;
+  height: 14px;
 }
 
 .brand-title {

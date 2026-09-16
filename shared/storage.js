@@ -135,6 +135,43 @@ const TrackerStorage = (() => {
     return getLocalDateStr(d);
   }
 
+  function defaultGoalFor(metricId) {
+    return metricId === 'jobs' ? 5 : (metricId === 'leetcode' ? 2 : 1);
+  }
+
+  // A streak day is a day the DAILY GOAL was met, not merely a day with an
+  // entry. Logging one application against a goal of five keeps the count
+  // moving but does not extend the streak.
+  function goalMetOn(dailyMap, dateStr, metricId, goal) {
+    return (((dailyMap || {})[dateStr] || {})[metricId] || 0) >= Math.max(1, goal || 1);
+  }
+
+  // Consecutive goal-met days ending today, or ending yesterday when today's
+  // goal is still open, so a streak is not shown as broken before the day is.
+  function computeCurrentStreak(dailyMap, metricId, goal, todayStr) {
+    let check = todayStr || getLocalDateStr();
+    if (!goalMetOn(dailyMap, check, metricId, goal)) check = addDays(check, -1);
+    let streak = 0;
+    while (goalMetOn(dailyMap, check, metricId, goal)) {
+      streak++;
+      check = addDays(check, -1);
+    }
+    return streak;
+  }
+
+  function computeLongestStreak(dailyMap, metricId, goal) {
+    const dates = Object.keys(dailyMap || {}).filter(d => goalMetOn(dailyMap, d, metricId, goal)).sort();
+    let best = 0;
+    let run = 0;
+    let prev = null;
+    dates.forEach(d => {
+      run = prev && addDays(prev, 1) === d ? run + 1 : 1;
+      if (run > best) best = run;
+      prev = d;
+    });
+    return best;
+  }
+
   function getStorageArea() {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       return chrome.storage.local;
@@ -214,10 +251,7 @@ const TrackerStorage = (() => {
             seedDefaultMetrics();
           }
           const filtered = allMetrics.map(m => {
-            let dailyGoal = m.dailyGoal;
-            if (!dailyGoal) {
-              dailyGoal = m.id === 'jobs' ? 5 : (m.id === 'leetcode' ? 2 : 1);
-            }
+            const dailyGoal = m.dailyGoal || defaultGoalFor(m.id);
             return { ...m, dailyGoal };
           }).filter(m => {
             if (m.isDefault || m.id === 'jobs' || m.id === 'leetcode') return true;
@@ -582,22 +616,16 @@ const TrackerStorage = (() => {
         dailyMap[l.date][mId] = (dailyMap[l.date][mId] || 0) + cnt;
       });
 
-      const jobDates = Object.keys(dailyMap)
-        .filter(d => (dailyMap[d]['jobs'] || 0) > 0)
-        .sort();
-
-      const jobDateSet = new Set(jobDates);
-      let currentStreak = 0;
-      let checkDateStr = todayStr;
-
-      if (!jobDateSet.has(checkDateStr)) {
-        checkDateStr = addDays(checkDateStr, -1);
-      }
-
-      while (jobDateSet.has(checkDateStr)) {
-        currentStreak++;
-        checkDateStr = addDays(checkDateStr, -1);
-      }
+      // Goal-based streaks per tracker. currentStreak stays the jobs streak
+      // for the calendar dock and older callers.
+      const streaks = {};
+      const longestStreaks = {};
+      metrics.forEach(m => {
+        const goal = m.dailyGoal || defaultGoalFor(m.id);
+        streaks[m.id] = computeCurrentStreak(dailyMap, m.id, goal, todayStr);
+        longestStreaks[m.id] = computeLongestStreak(dailyMap, m.id, goal);
+      });
+      const currentStreak = streaks.jobs || 0;
 
       return {
         todayStr,
@@ -608,12 +636,18 @@ const TrackerStorage = (() => {
         totals,
         totalLogs: logs.length,
         currentStreak,
+        streaks,
+        longestStreaks,
         dailyMap
       };
     },
 
     formatSecondsToMMSS,
     parseStringToSeconds,
+    defaultGoalFor,
+    goalMetOn,
+    computeCurrentStreak,
+    computeLongestStreak,
 
     formatTimeHMS(totalSeconds) {
       const s = Math.max(0, parseInt(totalSeconds, 10) || 0);

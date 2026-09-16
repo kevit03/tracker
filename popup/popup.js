@@ -545,8 +545,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const streakPill = el('streak-pill');
     if (streakPill) {
       streakPill.title = metricStreak > 0
-        ? metricStreak + ' consecutive day(s) with a ' + current.name + ' entry'
-        : 'No active ' + current.name + ' streak. Log one today to start it.';
+        ? metricStreak + ' consecutive day(s) hitting the ' + current.name + ' daily goal'
+        : 'No active ' + current.name + ' streak. Hit today\'s daily goal to start one.';
     }
 
     // First-run guidance: only for an account with no data at all
@@ -563,20 +563,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderWidgets();
   }
 
-  // Consecutive days (ending today or yesterday) with at least one entry for a metric
+  // Consecutive days (ending today or yesterday) on which the tracker's daily
+  // goal was met. Computed by TrackerStorage.getStats so every surface agrees.
   function computeStreak(metricId) {
-    const dailyMap = (stats && stats.dailyMap) || {};
-    const hasEntry = (dateStr) => ((dailyMap[dateStr] || {})[metricId] || 0) > 0;
-    let checkDateStr = (stats && stats.todayStr) || TrackerStorage.getLocalDateStr();
-    if (!hasEntry(checkDateStr)) {
-      checkDateStr = TrackerStorage.addDays(checkDateStr, -1);
-    }
-    let streak = 0;
-    while (hasEntry(checkDateStr)) {
-      streak++;
-      checkDateStr = TrackerStorage.addDays(checkDateStr, -1);
-    }
-    return streak;
+    return (stats && stats.streaks && stats.streaks[metricId]) || 0;
   }
 
   // Cumulative solve-time block: today, all time, average, fastest, plus a trend line
@@ -1068,19 +1058,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Longest run of consecutive days with at least one entry, over all history.
+  // Longest run of consecutive goal-met days over all history.
   function computeLongestStreak(metricId) {
-    const dailyMap = (stats && stats.dailyMap) || {};
-    const dates = Object.keys(dailyMap).filter(d => (dailyMap[d][metricId] || 0) > 0).sort();
-    let best = 0;
-    let run = 0;
-    let prev = null;
-    dates.forEach(d => {
-      run = prev && TrackerStorage.addDays(prev, 1) === d ? run + 1 : 1;
-      if (run > best) best = run;
-      prev = d;
-    });
-    return best;
+    return (stats && stats.longestStreaks && stats.longestStreaks[metricId]) || 0;
   }
 
   // Reconciles the host against the layout: wrappers are created for new

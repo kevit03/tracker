@@ -115,6 +115,21 @@ class FakeElement {
     this.classList = new FakeClassList(this);
     this.checked = false;
     this.style = {};
+    this.title = '';
+    // Layout stand-ins: tests set these directly.
+    this.offsetHeight = 0;
+    this.offsetTop = 0;
+    this.rectTop = 0;
+    // data-* attributes, camelCased, the way the real DOM exposes them.
+    this.dataset = new Proxy({}, {
+      get: (_, key) => (typeof key === 'string' ? this.getAttribute('data-' + key.replace(/[A-Z]/g, c => '-' + c.toLowerCase())) : undefined) ?? undefined,
+      set: (_, key, value) => { this.setAttribute('data-' + String(key).replace(/[A-Z]/g, c => '-' + c.toLowerCase()), value); return true; },
+      has: (_, key) => this.hasAttribute('data-' + String(key).replace(/[A-Z]/g, c => '-' + c.toLowerCase()))
+    });
+  }
+  get firstElementChild() { return this.children[0] || null; }
+  getBoundingClientRect() {
+    return { top: this.rectTop, bottom: this.rectTop + this.offsetHeight, left: 0, right: 0, width: 0, height: this.offsetHeight, x: 0, y: this.rectTop };
   }
   get id() { return this.getAttribute('id') || ''; }
   set id(v) { this.setAttribute('id', v); }
@@ -209,6 +224,7 @@ class FakeElement {
 class FakeDocument {
   constructor() {
     this.title = '';
+    this.readyState = 'loading';
     this.documentElement = new FakeElement('html', this);
     this.documentElement.isRoot = true;
     this.body = new FakeElement('body', this);

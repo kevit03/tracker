@@ -120,7 +120,7 @@ async function run() {
     uninstallMockChrome();
   }
 
-  // 3. Streak Calculations
+  // 3. Streak Calculations: a streak day is a day the DAILY GOAL was met
   {
     const { TrackerStorage } = getFreshStorage();
     const today = TrackerStorage.getLocalDateStr();
@@ -128,33 +128,68 @@ async function run() {
     const twoDaysAgo = TrackerStorage.addDays(today, -2);
     const threeDaysAgo = TrackerStorage.addDays(today, -3);
 
-    // 3-day consecutive streak ending today
+    // One entry a day against the default goal of 5 is activity, not a streak.
     await TrackerStorage.addLog({ metricId: 'jobs', date: twoDaysAgo });
     await TrackerStorage.addLog({ metricId: 'jobs', date: yesterday });
     await TrackerStorage.addLog({ metricId: 'jobs', date: today });
-    // Add multiple entries on today to ensure no streak inflation
+    let stats = await TrackerStorage.getStats();
+    assert.strictEqual(stats.currentStreak, 0, 'Entries below the daily goal must not start a streak');
+    assert.strictEqual(stats.streaks.jobs, 0);
+
+    // Lower the goal to 2 and meet it three days running.
+    await TrackerStorage.setMetricGoal('jobs', 2);
+    await TrackerStorage.addLog({ metricId: 'jobs', date: twoDaysAgo });
+    await TrackerStorage.addLog({ metricId: 'jobs', date: yesterday });
     await TrackerStorage.addLog({ metricId: 'jobs', date: today });
-    // Add LeetCode to ensure other metrics do not alter jobs streak
+    // Extra entries on a met day must not inflate the streak
+    await TrackerStorage.addLog({ metricId: 'jobs', date: today });
+    // Other metrics do not alter the jobs streak
     await TrackerStorage.addLog({ metricId: 'leetcode', date: threeDaysAgo });
 
-    let stats = await TrackerStorage.getStats();
-    assert.strictEqual(stats.currentStreak, 3, 'Streak should be 3');
-    assert.strictEqual(stats.today['jobs'], 2);
-    assert.strictEqual(stats.totals['jobs'], 4);
+    stats = await TrackerStorage.getStats();
+    assert.strictEqual(stats.currentStreak, 3, 'Streak should be 3 once the goal is met three days running');
+    assert.strictEqual(stats.streaks.jobs, 3);
+    assert.strictEqual(stats.longestStreaks.jobs, 3);
+    assert.strictEqual(stats.streaks.leetcode, 0, 'One LeetCode entry against a goal of 2 is not a streak day');
+    assert.strictEqual(stats.today['jobs'], 3);
+    assert.strictEqual(stats.totals['jobs'], 7);
 
-    // Test streak active ending yesterday (user hasn't logged today yet)
+    // A day that fell short of the goal breaks the run, even with an entry.
+    const { TrackerStorage: tsShort } = getFreshStorage();
+    await tsShort.setMetricGoal('jobs', 2);
+    await tsShort.addLog({ metricId: 'jobs', date: twoDaysAgo });
+    await tsShort.addLog({ metricId: 'jobs', date: twoDaysAgo });
+    await tsShort.addLog({ metricId: 'jobs', date: yesterday });
+    await tsShort.addLog({ metricId: 'jobs', date: today });
+    await tsShort.addLog({ metricId: 'jobs', date: today });
+    const statsShort = await tsShort.getStats();
+    assert.strictEqual(statsShort.currentStreak, 1, 'Yesterday at 1 of 2 breaks the streak; today alone counts');
+    assert.strictEqual(statsShort.longestStreaks.jobs, 1);
+
+    // Streak still active when it ended yesterday (today's goal is open)
     const { TrackerStorage: ts2 } = getFreshStorage();
+    await ts2.setMetricGoal('jobs', 1);
     await ts2.addLog({ metricId: 'jobs', date: twoDaysAgo });
     await ts2.addLog({ metricId: 'jobs', date: yesterday });
     let stats2 = await ts2.getStats();
     assert.strictEqual(stats2.currentStreak, 2, 'Streak ending yesterday should be 2');
 
-    // Test broken streak (gap between twoDaysAgo and fourDaysAgo)
+    // Broken streak (gap between fourDaysAgo and today/yesterday)
     const { TrackerStorage: ts3 } = getFreshStorage();
+    await ts3.setMetricGoal('jobs', 1);
     const fourDaysAgo = ts3.addDays(today, -4);
     await ts3.addLog({ metricId: 'jobs', date: fourDaysAgo });
     let stats3 = await ts3.getStats();
     assert.strictEqual(stats3.currentStreak, 0, 'Streak with gap to today/yesterday should be 0');
+    assert.strictEqual(stats3.longestStreaks.jobs, 1, 'Longest streak remembers the old run');
+
+    // Pure helpers agree with getStats.
+    const map = { [twoDaysAgo]: { jobs: 5 }, [yesterday]: { jobs: 5 }, [today]: { jobs: 4 } };
+    assert.strictEqual(TrackerStorage.computeCurrentStreak(map, 'jobs', 5, today), 2, 'today short of goal: streak is yesterday\'s 2');
+    assert.strictEqual(TrackerStorage.computeCurrentStreak(map, 'jobs', 4, today), 3);
+    assert.strictEqual(TrackerStorage.computeLongestStreak(map, 'jobs', 5), 2);
+    assert.strictEqual(TrackerStorage.goalMetOn(map, today, 'jobs', 4), true);
+    assert.strictEqual(TrackerStorage.goalMetOn(map, today, 'jobs', 5), false);
 
     console.log('[PASS] Streak calculations and boundary handling');
     delete global.TrackerAuth;

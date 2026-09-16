@@ -456,8 +456,26 @@
     updateDock();
   }
 
+  // Only this cell's own overlay and button count. A nested or sibling cell
+  // for the same date may hold its own (soon to be removed) copies, and those
+  // must never be mistaken for ours.
+  function ownChild(cell, className) {
+    const kids = cell.children || [];
+    for (let i = 0; i < kids.length; i++) {
+      if (kids[i].classList && kids[i].classList.contains(className)) return kids[i];
+    }
+    return null;
+  }
+
+  function stripCell(cell) {
+    ['pt-cell-overlay', 'pt-quick-add-cell'].forEach(cls => {
+      const node = ownChild(cell, cls);
+      if (node) node.remove();
+    });
+  }
+
   function ensureQuickAddButton(cell, dateStr) {
-    if (cell.querySelector('.pt-quick-add-cell')) return;
+    if (ownChild(cell, 'pt-quick-add-cell')) return;
     const addBtn = document.createElement('button');
     addBtn.className = 'pt-quick-add-cell';
     addBtn.title = 'Log entry for ' + dateStr;
@@ -473,6 +491,16 @@
   // ---------------------------------------------------------------
   // 1. DAY CELL BADGES
   // ---------------------------------------------------------------
+  // Badges sit directly under the cell's date header; a cell with no usable
+  // header gets a fixed offset.
+  function badgeTopOffset(cell) {
+    const headerEl = cell.querySelector('h2, [role="heading"], button, [class*="header"]') || cell.firstElementChild;
+    if (headerEl && headerEl.offsetHeight > 0 && headerEl.offsetHeight < 60) {
+      return Math.max(24, headerEl.offsetTop + headerEl.offsetHeight + 2);
+    }
+    return 26;
+  }
+
   function renderBadges() {
     if (!stats || !metrics.length) return;
 
@@ -491,6 +519,13 @@
     const candidates = document.querySelectorAll('[role="gridcell"]');
     const seenCells = new Set();
 
+    // One badge per date. Week and Day views give a date more than one
+    // gridcell (the all-day strip and the timed column, for instance), and
+    // an event chip's aria-label can attribute its date to yet another
+    // container. Keep the cell whose badge lands lowest on screen and strip
+    // the rest, so a day is never announced twice.
+    const hosts = {};
+    const losers = [];
     candidates.forEach(cell => {
       // Never render inside a column header, row header, sidebar, or header bar
       if (cell.getAttribute('role') === 'columnheader' ||
@@ -505,17 +540,33 @@
       const dateStr = parseDateFromElement(cell);
       if (!dateStr) return;
 
+      const topOffset = badgeTopOffset(cell);
+      const rect = typeof cell.getBoundingClientRect === 'function' ? cell.getBoundingClientRect() : { top: 0 };
+      const badgeY = (rect.top || 0) + topOffset;
+      const current = hosts[dateStr];
+      if (!current) {
+        hosts[dateStr] = { cell, dateStr, topOffset, badgeY };
+        return;
+      }
+      if (badgeY >= current.badgeY) {
+        losers.push(current.cell);
+        hosts[dateStr] = { cell, dateStr, topOffset, badgeY };
+      } else {
+        losers.push(cell);
+      }
+    });
+
+    losers.forEach(stripCell);
+
+    Object.keys(hosts).forEach(key => {
+      const { cell, dateStr, topOffset } = hosts[key];
+
       const computedPos = window.getComputedStyle(cell).position;
       if (computedPos === 'static') {
         cell.style.position = 'relative';
       }
 
-      // Calculate header offset to position badges directly under the date
-      const headerEl = cell.querySelector('h2, [role="heading"], button, [class*="header"]') || cell.firstElementChild;
-      let topOffset = 26;
-      if (headerEl && headerEl.offsetHeight > 0 && headerEl.offsetHeight < 60) {
-        topOffset = Math.max(24, headerEl.offsetTop + headerEl.offsetHeight + 2);
-      }      const dateCounts = stats.dailyMap[dateStr] || {};
+      const dateCounts = stats.dailyMap[dateStr] || {};
       const stateKeyParts = [];
       metrics.forEach(m => {
         if (!activeVisibleMetrics.has(m.id)) return;
@@ -527,7 +578,7 @@
       });
       const stateKey = stateKeyParts.join('|');
 
-      const existing = cell.querySelector('.pt-cell-overlay');
+      const existing = ownChild(cell, 'pt-cell-overlay');
       if (existing && existing.dataset.stateKey === stateKey) {
         existing.style.top = topOffset + 'px';
         ensureQuickAddButton(cell, dateStr);
@@ -593,6 +644,10 @@
   // ---------------------------------------------------------------
   // 2. FLOATING DOCK
   // ---------------------------------------------------------------
+
+  // The padlock mark, identical to icons/icon*.png and the popup header.
+  const LOCK_MARK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 11.5V7.5a4 4 0 0 1 8 0v4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path fill="currentColor" fill-rule="evenodd" d="M7.5 11h9A2.5 2.5 0 0 1 19 13.5v5a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 18.5v-5A2.5 2.5 0 0 1 7.5 11Zm4.5 2.4a1.6 1.6 0 0 0-.8 2.99l-.3 2.21h2.2l-.3-2.21A1.6 1.6 0 0 0 12 13.4Z"/></svg>';
+
   function mountFloatingDock() {
     if (document.getElementById('pt-floating-dock')) return;
 
@@ -601,13 +656,13 @@
 
     dock.innerHTML = [
       '<button class="pt-dock-toggle" id="pt-dock-toggle">',
-        '<span class="pt-dock-icon"></span>',
-        '<span id="pt-dock-label">Tracker</span>',
+        '<span class="pt-dock-icon" aria-hidden="true">' + LOCK_MARK_SVG + '</span>',
+        '<span id="pt-dock-label">Locked In</span>',
         '<span class="pt-streak-pill" id="pt-dock-streak">0 day streak</span>',
       '</button>',
       '<div class="pt-dock-panel pt-hidden" id="pt-dock-panel">',
         '<div class="pt-panel-header">',
-          '<span class="pt-panel-title">Application Tracker</span>',
+          '<span class="pt-panel-title">Locked In</span>',
           '<div style="display:flex;align-items:center;gap:6px;">',
             '<button type="button" id="pt-dock-theme-btn" class="pt-dock-theme-btn" title="Toggle theme">Dark</button>',
             '<button class="pt-close-btn" id="pt-dock-close">&times;</button>',
@@ -1013,7 +1068,9 @@
     const el = (id) => document.getElementById(id);
 
     el('pt-dock-label').textContent = jobsToday + ' Jobs Today';
-    el('pt-dock-streak').textContent = (stats.currentStreak || 0) + ' day streak';
+    const streakEl = el('pt-dock-streak');
+    streakEl.textContent = (stats.currentStreak || 0) + ' day streak';
+    streakEl.title = 'Consecutive days the Job Applications daily goal was met';
     el('pt-today-count').textContent = jobsToday;
     el('pt-stat-week').textContent = stats.thisWeek.jobs || 0;
     el('pt-stat-month').textContent = stats.thisMonth.jobs || 0;
@@ -1440,6 +1497,12 @@
       applyStoredDockTimer,
       dockTimerRecord,
       __setNow: (fn) => { nowMs = fn || (() => Date.now()); },
+      renderBadges,
+      __setOverlayState: (next) => {
+        if (next.metrics) metrics = next.metrics;
+        if (next.stats) stats = next.stats;
+        if (next.visible) activeVisibleMetrics = new Set(next.visible);
+      },
       getDockTimerState: () => ({
         seconds: getDockRemainingSeconds(),
         target: dockTimerTargetSeconds,

@@ -1,4 +1,4 @@
-/* PulseTracker — injected styles for Google Calendar overlay */
+/* Locked In — injected styles for Google Calendar overlay */
 
 /* ===== Day cell badges (positioned directly under the date header) ===== */
 .pt-cell-overlay {
@@ -328,6 +328,16 @@ aside .pt-quick-add-cell {
   height: 18px;
   border-radius: 4px;
   background: #1a73e8;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pt-dock-icon svg {
+  width: 13px;
+  height: 13px;
 }
 
 .pt-streak-pill {
@@ -1205,6 +1215,7 @@ aside .pt-quick-add-cell {
 
 #pt-floating-dock.pt-dark .pt-dock-icon {
   background: #8ab4f8;
+  color: #202124;
 }
 
 #pt-floating-dock.pt-dark .pt-streak-pill {

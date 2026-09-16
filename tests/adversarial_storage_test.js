@@ -531,7 +531,13 @@ async function runAllTests() {
       await TrackerStorage.addLog({ metricId: 'jobs', date: dayMinus1 });
       await TrackerStorage.addLog({ metricId: 'jobs', date: todayStr });
 
+      // A streak day is a goal-met day: one entry against the default goal
+      // of 5 is not one. Lower the goal to 1 to exercise the day arithmetic.
       let stats = await TrackerStorage.getStats();
+      assert.strictEqual(stats.currentStreak, 0, `Single entries below the goal must not form a streak, got ${stats.currentStreak}`);
+      await TrackerStorage.setMetricGoal('jobs', 1);
+
+      stats = await TrackerStorage.getStats();
       assert.strictEqual(stats.currentStreak, 5, `Expected 5-day streak ending today, got ${stats.currentStreak}`);
 
       const todayLogs = await TrackerStorage.getLogs({ startDate: todayStr, endDate: todayStr });
@@ -569,8 +575,16 @@ async function runAllTests() {
         { id: '6', metricId: 'jobs', date: today, count: 1, userEmail: null },
       ];
 
+      await TrackerStorage.setMetricGoal('jobs', 1);
       const stats = await TrackerStorage.getStats();
       assert.strictEqual(stats.currentStreak, 6, `Expected 6-day streak, got ${stats.currentStreak}`);
+
+      // With a goal of 2 only the count-2 and count-3 days qualify, and they
+      // are not adjacent: the current streak is 0 and the longest is 1.
+      await TrackerStorage.setMetricGoal('jobs', 2);
+      const strict = await TrackerStorage.getStats();
+      assert.strictEqual(strict.currentStreak, 0, `Days short of a goal of 2 must not chain, got ${strict.currentStreak}`);
+      assert.strictEqual(strict.longestStreaks.jobs, 1);
     });
 
     await test('4.7: Multiple entries on same day do not artificially inflate streak count', async () => {
@@ -640,8 +654,10 @@ async function runAllTests() {
 
       mockEnv.memoryStore['logs'] = logs;
 
+      await TrackerStorage.setMetricGoal('jobs', 1);
       const stats = await TrackerStorage.getStats();
       assert.strictEqual(stats.currentStreak, 15, `Streak should stop at the gap and equal 15, got ${stats.currentStreak}`);
+      assert.strictEqual(stats.longestStreaks.jobs, 35, `Longest streak is the older 35-day run, got ${stats.longestStreaks.jobs}`);
       assert.strictEqual(stats.totals.jobs, 50, `Total jobs should equal 50`);
     });
   });

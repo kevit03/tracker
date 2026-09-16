@@ -38,7 +38,7 @@ const WidgetLayout = (() => {
     },
     streak: {
       name: 'Streak',
-      description: 'Current and longest run of consecutive active days.',
+      description: 'Current and longest run of days that hit the daily goal.',
       singleton: false,
       defaults: { metricId: ACTIVE }
     },
