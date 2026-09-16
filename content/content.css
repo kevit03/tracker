@@ -1,6 +1,5 @@
-/* Locked In — injected styles for Google Calendar overlay */
-
 /* ===== Day cell badges (positioned directly under the date header) ===== */
+
 .pt-cell-overlay {
   position: absolute;
   top: 26px; /* Directly under the date number circle */
@@ -45,129 +44,6 @@
   background-color: #fff !important;
 }
 
-.pt-goal-tag {
-  font-size: 10px;
-  color: #5f6368;
-  background: #e8eaed;
-  padding: 1px 5px;
-  border-radius: 4px;
-  cursor: pointer;
-  margin-left: 4px;
-}
-
-.pt-goal-tag:hover {
-  background: #d2e3fc;
-  /* Blue 900: #1a73e8 on #d2e3fc is only 3.5:1 at this 10px size */
-  color: #174ea6;
-}
-
-/* 30-Day Activity Chart */
-.pt-activity-section {
-  border-top: 1px solid #e8eaed;
-  padding-top: 8px;
-}
-
-.pt-activity-toggle {
-  background: none;
-  border: none;
-  color: #1a73e8;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 2px 0;
-}
-
-.pt-activity-body {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.pt-chart-container {
-  height: 52px;
-  background: #f8f9fa;
-  border: 1px solid #e8eaed;
-  border-radius: 6px;
-  padding: 6px 4px 2px;
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.pt-bar-col {
-  flex: 1;
-  height: 100%;
-  display: flex;
-  align-items: flex-end;
-  position: relative;
-  cursor: default;
-}
-
-.pt-bar {
-  width: 100%;
-  background: #dadce0;
-  min-height: 2px;
-  border-radius: 2px 2px 0 0;
-  transition: height 0.15s, background 0.12s;
-}
-
-.pt-bar.has-activity {
-  background: #1a73e8;
-}
-
-.pt-bar-tooltip {
-  display: none;
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: #202124;
-  color: #fff;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: 1000;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-}
-
-.pt-bar-col:hover .pt-bar-tooltip {
-  display: block;
-}
-
-.pt-activity-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  background: #f8f9fa;
-  border: 1px solid #e8eaed;
-  border-radius: 6px;
-  padding: 6px 4px;
-  text-align: center;
-}
-
-.pt-act-stat-num {
-  font-size: 13px;
-  font-weight: 700;
-  color: #202124;
-  line-height: 1.1;
-}
-
-.pt-act-stat-lbl {
-  font-size: 9px;
-  color: #5f6368;
-  text-transform: uppercase;
-  font-weight: 600;
-  letter-spacing: 0.2px;
-  margin-top: 1px;
-}
-
 .pt-badge-dot {
   width: 6px;
   height: 6px;
@@ -182,6 +58,7 @@
 }
 
 /* Quick Add button positioned in top right of cell, next to date header */
+
 .pt-quick-add-cell {
   position: absolute;
   top: 4px;
@@ -205,10 +82,7 @@
   box-shadow: 0 1px 2px rgba(60,64,67,0.15);
 }
 
-[data-datekey]:hover .pt-quick-add-cell,
-[role="gridcell"]:hover .pt-quick-add-cell,
-.pt-quick-add-cell:hover,
-.pt-quick-add-cell:focus-visible {
+[data-datekey]:hover .pt-quick-add-cell, [role="gridcell"]:hover .pt-quick-add-cell, .pt-quick-add-cell:hover, .pt-quick-add-cell:focus-visible {
   opacity: 1;
 }
 
@@ -224,166 +98,54 @@
    Google Calendar's default theme setting is "Device default", so this
    tracks it in the common case; on a mismatch the controls stay legible,
    just cooler than their surroundings. */
+
 @media (prefers-color-scheme: dark) {
-  .pt-quick-add-cell {
+.pt-quick-add-cell {
     background: #292a2d;
     border-color: #5f6368;
     color: #e8eaed;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
   }
 
-  .pt-quick-add-cell:hover {
+.pt-quick-add-cell:hover {
     background: #8ab4f8;
     border-color: #8ab4f8;
     color: #202124;
   }
 
-  .pt-quick-add-cell:focus-visible {
+.pt-quick-add-cell:focus-visible {
     outline-color: #8ab4f8;
   }
 
-  .pt-badge {
+.pt-badge {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   }
 }
 
 /* Suppress any badge or quick-add from appearing in column headers or nav headers */
-[role="columnheader"] .pt-cell-overlay,
-[role="columnheader"] .pt-quick-add-cell,
-header .pt-cell-overlay,
-header .pt-quick-add-cell,
-aside .pt-cell-overlay,
-aside .pt-quick-add-cell {
+
+[role="columnheader"] .pt-cell-overlay, [role="columnheader"] .pt-quick-add-cell, header .pt-cell-overlay, header .pt-quick-add-cell, aside .pt-cell-overlay, aside .pt-quick-add-cell {
   display: none !important;
 }
 
-/* ===== Floating dock ===== */
-#pt-floating-dock {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 999999;
-  font-family: 'Google Sans', Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
-  user-select: none;
-}
+/* ===== Keyboard focus and shared modal controls =====
+   Scoped to our own roots so nothing leaks into Google's UI. The ring is
+   drawn in Blue 600 on light and Blue 200 on dark; both clear 3:1 against
+   every surface we paint behind them. */
 
-/* Keyboard focus. Scoped to our own roots so nothing leaks into Google's UI.
-   The ring is drawn in Blue 600 on light and Blue 200 on dark; both clear 3:1
-   against every surface we paint behind them. */
-#pt-floating-dock button:focus-visible,
-#pt-floating-dock input:focus-visible,
-#pt-floating-dock select:focus-visible,
-.pt-modal-backdrop button:focus-visible,
-.pt-modal-backdrop input:focus-visible,
-.pt-modal-backdrop select:focus-visible,
-.pt-quick-add-cell:focus-visible {
+.pt-modal-backdrop button:focus-visible, .pt-modal-backdrop input:focus-visible, .pt-modal-backdrop select:focus-visible, .pt-quick-add-cell:focus-visible {
   outline: 2px solid #1a73e8;
   outline-offset: 2px;
 }
 
-#pt-floating-dock.pt-dark button:focus-visible,
-#pt-floating-dock.pt-dark input:focus-visible,
-#pt-floating-dock.pt-dark select:focus-visible,
-.pt-modal-dialog.pt-dark button:focus-visible,
-.pt-modal-dialog.pt-dark input:focus-visible,
-.pt-modal-dialog.pt-dark select:focus-visible {
+.pt-modal-dialog.pt-dark button:focus-visible, .pt-modal-dialog.pt-dark input:focus-visible, .pt-modal-dialog.pt-dark select:focus-visible {
   outline-color: #8ab4f8;
 }
 
-/* A focused delete control must be visible even before its hover reveal */
-#pt-floating-dock .pt-delete-tracker-btn:focus-visible {
-  opacity: 1;
-}
-
-#pt-floating-dock button:disabled,
 .pt-modal-backdrop button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
-}
-
-.pt-dock-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: #fff;
-  color: #202124;
-  padding: 10px 16px;
-  border-radius: 24px;
-  box-shadow: 0 2px 8px rgba(60,64,67,0.18), 0 1px 3px rgba(60,64,67,0.12);
-  border: 1px solid #dadce0;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  transition: box-shadow 0.15s, transform 0.15s;
-}
-
-.pt-dock-toggle:hover {
-  box-shadow: 0 4px 14px rgba(60,64,67,0.22);
-  transform: translateY(-1px);
-}
-
-.pt-dock-icon {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: #1a73e8;
-  color: #fff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.pt-dock-icon svg {
-  width: 13px;
-  height: 13px;
-}
-
-.pt-streak-pill {
-  background: #f1f3f4;
-  color: #3c4043;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-/* ===== Expanded panel ===== */
-.pt-dock-panel {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  right: 0;
-  width: 340px;
-  /* Never spill past the viewport on a narrow or short Calendar window */
-  max-width: calc(100vw - 48px);
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 28px rgba(60,64,67,0.22), 0 2px 6px rgba(60,64,67,0.10);
-  border: 1px solid #dadce0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  animation: ptSlideUp 0.15s ease-out;
-}
-
-@keyframes ptSlideUp {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.pt-panel-header {
-  padding: 12px 16px;
-  border-bottom: 1px solid #e8eaed;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.pt-panel-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #202124;
 }
 
 .pt-close-btn {
@@ -399,51 +161,6 @@ aside .pt-quick-add-cell {
 
 .pt-close-btn:hover {
   background: #f1f3f4;
-}
-
-.pt-panel-body {
-  padding: 14px 16px;
-  max-height: min(500px, calc(100vh - 140px));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: #dadce0 transparent;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-/* Hero counter */
-.pt-hero-card {
-  background: #f8fafd;
-  border: 1px solid #d2e3fc;
-  border-radius: 10px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-
-.pt-hero-count {
-  font-size: 36px;
-  font-weight: 700;
-  color: #1a73e8;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.pt-hero-label {
-  font-size: 11px;
-  color: #5f6368;
-  margin: 2px 0 12px;
-  font-weight: 500;
-}
-
-.pt-action-row {
-  display: flex;
-  gap: 8px;
-  width: 100%;
 }
 
 .pt-btn-primary {
@@ -463,476 +180,8 @@ aside .pt-quick-add-cell {
   background: #1557b0;
 }
 
-/* Flow button, adapted from the 21st.dev FlowButton: pill at rest with a
-   tinted fill; on hover a disc of the button color grows to fill it, the
-   label slides right, one arrow slides in from the left as the other slides
-   out to the right, and the pill relaxes into a rounded rectangle. */
-.pt-btn-primary.pt-flow-btn {
-  --pt-flow-color: #1a73e8;
-  --pt-flow-on-color: #ffffff;
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1.5px solid var(--pt-flow-color);
-  border-radius: 100px;
-  background: color-mix(in srgb, var(--pt-flow-color) 12%, transparent);
-  color: var(--pt-flow-color);
-  padding: 8px 30px;
-  transition:
-    border-radius 0.3s cubic-bezier(0.23, 1, 0.32, 1),
-    color 0.3s cubic-bezier(0.23, 1, 0.32, 1),
-    transform 0.15s cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.pt-btn-primary.pt-flow-btn:hover {
-  background: color-mix(in srgb, var(--pt-flow-color) 12%, transparent);
-  border-radius: 12px;
-  color: var(--pt-flow-on-color);
-}
-
-.pt-btn-primary.pt-flow-btn:active {
-  transform: scale(0.95);
-}
-
-.pt-flow-btn-circle {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  width: 16px;
-  height: 16px;
-  margin-top: -8px;
-  border-radius: 50%;
-  background: var(--pt-flow-color);
-  opacity: 0;
-  transform: scale(0);
-  transition: transform 0.5s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.5s cubic-bezier(0.23, 1, 0.32, 1);
-  z-index: -1;
-  pointer-events: none;
-}
-
-.pt-flow-btn:hover .pt-flow-btn-circle {
-  opacity: 1;
-  transform: scale(44);
-}
-
-.pt-flow-btn-label {
-  position: relative;
-  z-index: 1;
-  white-space: nowrap;
-  transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.pt-flow-btn:hover .pt-flow-btn-label {
-  transform: translateX(6px);
-}
-
-.pt-flow-btn-arrow {
-  position: absolute;
-  top: 50%;
-  margin-top: -7px;
-  display: inline-flex;
-  z-index: 1;
-  pointer-events: none;
-  transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.3s cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.pt-flow-btn-arrow-in {
-  left: 12px;
-  opacity: 0;
-  transform: translateX(-100%);
-}
-
-.pt-flow-btn:hover .pt-flow-btn-arrow-in {
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.pt-flow-btn-arrow-out {
-  right: 12px;
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.pt-flow-btn:hover .pt-flow-btn-arrow-out {
-  opacity: 0;
-  transform: translateX(100%);
-}
-
-/* Glassmorphism. The card carries its own soft color field so the blur and
-   tint read the same over Google Calendar's chrome, in both themes. */
-.pt-glass-card {
-  /* overflow:hidden lets a column-flex parent shrink this to 0; refuse. */
-  flex-shrink: 0;
-  --pt-glass-bg: rgba(255, 255, 255, 0.55);
-  --pt-glass-edge-1: rgba(26, 115, 232, 0.45);
-  --pt-glass-edge-2: rgba(30, 142, 62, 0.35);
-  --pt-glass-glow-1: rgba(26, 115, 232, 0.30);
-  --pt-glass-glow-2: rgba(30, 142, 62, 0.24);
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  background:
-    linear-gradient(var(--pt-glass-bg), var(--pt-glass-bg)) padding-box,
-    linear-gradient(135deg, var(--pt-glass-edge-1), var(--pt-glass-edge-2)) border-box;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 4px 16px rgba(60, 64, 67, 0.10);
-}
-
-.pt-glass-card::before {
-  content: '';
-  position: absolute;
-  inset: -40%;
-  z-index: -1;
-  background:
-    radial-gradient(circle at 18% 25%, var(--pt-glass-glow-1) 0, transparent 38%),
-    radial-gradient(circle at 85% 75%, var(--pt-glass-glow-2) 0, transparent 40%);
-  filter: blur(22px);
-  pointer-events: none;
-}
-
-/* Google Account card */
-.pt-account-card {
-  padding: 8px 10px;
-  font-size: 11px;
-}
-
-.pt-account-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.pt-account-info.pt-hidden {
-  display: none;
-}
-
-.pt-account-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #1a73e8, #1e8e3e);
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  overflow: hidden;
-  box-shadow: 0 0 0 2px var(--pt-glass-bg), 0 0 0 3px var(--pt-glass-edge-1);
-}
-
-.pt-account-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.pt-account-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-
-.pt-account-email {
-  align-self: flex-start;
-  max-width: 100%;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.75);
-  border: 1px solid rgba(32, 33, 36, 0.08);
-  font-weight: 600;
-  color: #202124;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pt-account-sub {
-  font-size: 10px;
-  color: #5f6368;
-  padding-left: 2px;
-}
-
-.pt-account-sub.pt-expired {
-  color: #d93025;
-  font-weight: 500;
-}
-
-.pt-account-signout {
-  background: none;
-  border: none;
-  color: #d93025;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-family: inherit;
-  transition: background 0.15s cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.pt-account-signout:hover {
-  text-decoration: underline;
-  background: rgba(217, 48, 37, 0.12);
-}
-
-/* Google sign-in pill. The G sits on a white disc so it stays crisp on dark. */
-.pt-google-btn {
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid #dadce0;
-  background: #ffffff;
-  color: #202124;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    transform 0.2s cubic-bezier(0.23, 1, 0.32, 1),
-    box-shadow 0.2s cubic-bezier(0.23, 1, 0.32, 1),
-    background 0.2s cubic-bezier(0.23, 1, 0.32, 1),
-    border-color 0.2s cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.pt-google-btn.pt-hidden {
-  display: none;
-}
-
-.pt-google-btn:hover {
-  background: #f8fbff;
-  border-color: #1967d2;
-  box-shadow: 0 4px 14px rgba(26, 115, 232, 0.18);
-  transform: translateY(-1px);
-}
-
-.pt-google-btn:active {
-  transform: scale(0.95);
-  box-shadow: none;
-}
-
-.pt-google-btn-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #ffffff;
-  box-sizing: border-box;
-  padding: 1px;
-  flex-shrink: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pt-flow-btn,
-  .pt-flow-btn-circle,
-  .pt-flow-btn-label,
-  .pt-flow-btn-arrow,
-  .pt-google-btn {
-    transition: none;
-  }
-}
-
-.pt-btn-secondary {
-  background: #fff;
-  color: #5f6368;
-  border: 1px solid #dadce0;
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.pt-btn-secondary:hover {
-  background: #f1f3f4;
-}
-
-/* Secondary metric buttons */
-.pt-secondary-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
-}
-
-.pt-secondary-row {
-  display: flex;
-  gap: 6px;
-  width: 100%;
-  align-items: center;
-}
-
-.pt-btn-metric {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid #dadce0;
-  background: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  transition: background 0.12s;
-  white-space: nowrap;
-}
-
-.pt-btn-metric:hover {
-  background: #f8f9fa;
-}
-
-.pt-btn-metric-undo {
-  width: 36px;
-  padding: 6px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.pt-btn-metric-undo:hover {
-  background: #f1f3f4;
-  color: #d93025;
-}
-
-/* Trackers list */
-.pt-section-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  color: #5f6368;
-  margin-bottom: 4px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.pt-tracker-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.pt-tracker-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: background 0.1s;
-}
-
-.pt-tracker-item:hover {
-  background: #f1f3f4;
-}
-
-.pt-tracker-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pt-tracker-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.pt-checkbox {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 10px;
-  font-weight: bold;
-  flex-shrink: 0;
-}
-
-.pt-delete-tracker-btn {
-  background: none;
-  border: none;
-  color: #80868b;
-  font-size: 14px;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
-  opacity: 0;
-  transition: color 0.1s, opacity 0.1s;
-}
-
-.pt-tracker-item:hover .pt-delete-tracker-btn {
-  opacity: 1;
-}
-
-.pt-delete-tracker-btn:hover {
-  color: #d93025;
-}
-
-/* Details form */
-.pt-details-toggle {
-  background: none;
-  border: none;
-  color: #1a73e8;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  padding: 2px 0;
-}
-
-.pt-details-form {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  background: #f8f9fa;
-  padding: 10px;
-  border-radius: 6px;
-  border: 1px solid #e8eaed;
-}
-
-.pt-details-form input,
-.pt-details-form select {
-  padding: 6px 8px;
-  font-size: 12px;
-  border: 1px solid #dadce0;
-  border-radius: 4px;
-  outline: none;
-  background: #fff;
-  font-family: inherit;
-}
-
-.pt-details-form input:focus,
-.pt-details-form select:focus {
-  border-color: #1a73e8;
-}
-
 /* ===== Day detail modal ===== */
+
 .pt-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1002,8 +251,7 @@ aside .pt-quick-add-cell {
   letter-spacing: 0.3px;
 }
 
-.pt-modal-form input,
-.pt-modal-form select {
+.pt-modal-form input, .pt-modal-form select {
   padding: 6px 8px;
   font-size: 12px;
   border: 1px solid #dadce0;
@@ -1013,8 +261,7 @@ aside .pt-quick-add-cell {
   font-family: inherit;
 }
 
-.pt-modal-form input:focus,
-.pt-modal-form select:focus {
+.pt-modal-form input:focus, .pt-modal-form select:focus {
   border-color: #1a73e8;
 }
 
@@ -1027,529 +274,33 @@ aside .pt-quick-add-cell {
   flex: 1;
 }
 
-/* ===== Create tracker modal ===== */
-.pt-color-btn {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: transform 0.1s;
-}
+/* ===== Dark mode (the day modal follows the popup's theme) ===== */
 
-.pt-color-btn:hover {
-  transform: scale(1.12);
-}
-
-.pt-color-btn.pt-selected {
-  border-color: #202124;
-}
-
-.pt-hidden {
-  display: none !important;
-}
-
-/* ===== Dock Theme Toggle Button ===== */
-.pt-dock-theme-btn {
-  background: #f1f3f4;
-  border: 1px solid #dadce0;
-  border-radius: 12px;
-  padding: 3px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #3c4043;
-  cursor: pointer;
-  line-height: 1;
-  transition: all 0.12s;
-}
-
-.pt-dock-theme-btn:hover {
-  background: #e8eaed;
-  color: #202124;
-}
-
-/* ===== LeetCode Timer Widget (Dock & Modal) ===== */
-.pt-timer-widget {
-  background: #f8fafd;
-  border: 1px solid #d2e3fc;
-  border-radius: 8px;
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.pt-timer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.pt-timer-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: #1a73e8;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-
-.pt-timer-hint {
-  font-size: 10px;
-  color: #5f6368;
-  font-style: italic;
-}
-
-.pt-timer-controls-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pt-timer-input-wrap {
-  flex: 1;
-}
-
-.pt-timer-input {
-  width: 100%;
-  box-sizing: border-box;
-  font-family: 'SF Mono', Monaco, Consolas, monospace;
-  font-size: 17px;
-  font-weight: 700;
-  text-align: center;
-  padding: 4px 6px;
-  border: 1px solid #dadce0;
-  border-radius: 6px;
-  background: #fff;
-  color: #202124;
-  outline: none;
-  transition: border-color 0.12s;
-}
-
-.pt-timer-input:focus {
-  border-color: #1a73e8;
-  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
-}
-
-/* Countdown that has reached zero. A resting state, not a flash: the countdown
-   can finish while the tab is closed, so the field must still say so on return. */
-.pt-timer-input.pt-timer-expired {
-  border-color: #d93025;
-  box-shadow: 0 0 0 2px rgba(217, 48, 37, 0.25);
-  animation: pt-timer-expired-pulse 0.9s ease-in-out 3;
-}
-
-#pt-floating-dock.pt-dark .pt-timer-input.pt-timer-expired {
-  border-color: #f28b82;
-  box-shadow: 0 0 0 2px rgba(242, 139, 130, 0.3);
-}
-
-@keyframes pt-timer-expired-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(217, 48, 37, 0.25); }
-  50% { box-shadow: 0 0 0 5px rgba(217, 48, 37, 0.25); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pt-timer-input.pt-timer-expired { animation: none; }
-}
-
-.pt-timer-btn-group {
-  display: flex;
-  gap: 6px;
-}
-
-.pt-timer-btn {
-  padding: 5px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.12s;
-  border: 1px solid transparent;
-}
-
-.pt-timer-btn-start {
-  background: #1a73e8;
-  color: #fff;
-  border-color: #1a73e8;
-}
-
-.pt-timer-btn-start:hover {
-  background: #1557b0;
-}
-
-/* Amber with dark text (8.8:1) instead of white on #e37400 (3.1:1),
-   and it now matches the popup's running state. */
-.pt-timer-btn-start.running {
-  background: #f9ab00;
-  border-color: #f9ab00;
-  color: #202124;
-}
-
-.pt-timer-btn-start.running:hover {
-  background: #f29900;
-  border-color: #f29900;
-}
-
-.pt-timer-btn-reset {
-  background: #fff;
-  color: #5f6368;
-  border: 1px solid #dadce0;
-}
-
-.pt-timer-btn-reset:hover {
-  background: #f1f3f4;
-  color: #202124;
-}
-
-/* ===== Dark Mode Styles ===== */
-#pt-floating-dock.pt-dark .pt-dock-toggle {
-  background: #2d2f31;
-  color: #e8eaed;
-  border-color: #5f6368;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-}
-
-#pt-floating-dock.pt-dark .pt-dock-toggle:hover {
-  background: #35383b;
-}
-
-#pt-floating-dock.pt-dark .pt-dock-icon {
-  background: #8ab4f8;
-  color: #202124;
-}
-
-#pt-floating-dock.pt-dark .pt-streak-pill {
-  background: #3c4043;
-  color: #e8eaed;
-}
-
-#pt-floating-dock.pt-dark .pt-dock-panel {
-  background: #202124;
-  border-color: #5f6368;
-  color: #e8eaed;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
-}
-
-#pt-floating-dock.pt-dark .pt-panel-body,
 .pt-modal-dialog.pt-dark .pt-modal-body {
   scrollbar-color: #5f6368 transparent;
 }
 
-#pt-floating-dock.pt-dark .pt-panel-header {
-  border-bottom-color: #3c4043;
-}
-
-#pt-floating-dock.pt-dark .pt-panel-title {
-  color: #e8eaed;
-}
-
-#pt-floating-dock.pt-dark .pt-dock-theme-btn {
-  background: #3c4043;
-  border-color: #5f6368;
-  color: #e8eaed;
-}
-
-#pt-floating-dock.pt-dark .pt-dock-theme-btn:hover {
-  background: #4a4d51;
-  color: #fff;
-}
-
-#pt-floating-dock.pt-dark .pt-close-btn {
-  color: #9aa0a6;
-}
-
-#pt-floating-dock.pt-dark .pt-close-btn:hover {
-  background: #3c4043;
-  color: #e8eaed;
-}
-
-/* Account card and sign-in, dark. Class-based now, so no !important needed. */
-#pt-floating-dock.pt-dark .pt-glass-card {
-  --pt-glass-bg: rgba(255, 255, 255, 0.06);
-  --pt-glass-edge-1: rgba(138, 180, 248, 0.45);
-  --pt-glass-edge-2: rgba(129, 201, 149, 0.30);
-  --pt-glass-glow-1: rgba(138, 180, 248, 0.20);
-  --pt-glass-glow-2: rgba(129, 201, 149, 0.16);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-}
-
-#pt-floating-dock.pt-dark .pt-account-avatar {
-  background: linear-gradient(135deg, #8ab4f8, #81c995);
-  color: #202124;
-}
-
-#pt-floating-dock.pt-dark .pt-account-email {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: #e8eaed;
-}
-
-#pt-floating-dock.pt-dark .pt-account-sub {
-  color: #9aa0a6;
-}
-
-#pt-floating-dock.pt-dark .pt-account-sub.pt-expired,
-#pt-floating-dock.pt-dark .pt-account-signout {
-  color: #f28b82;
-}
-
-#pt-floating-dock.pt-dark .pt-account-signout:hover {
-  background: rgba(242, 139, 130, 0.16);
-}
-
-#pt-floating-dock.pt-dark .pt-google-btn {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.18);
-  color: #e8eaed;
-}
-
-#pt-floating-dock.pt-dark .pt-google-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: #8ab4f8;
-  box-shadow: 0 4px 14px rgba(138, 180, 248, 0.18);
-}
-
-#pt-floating-dock.pt-dark .pt-hero-card {
-  background: #282a2d;
-  border-color: #3c4043;
-}
-
-/* Blue 600 on the dark hero card is only 3.2:1; Blue 200 is 6.8:1 */
-#pt-floating-dock.pt-dark .pt-hero-count {
-  color: #8ab4f8;
-}
-
-#pt-floating-dock.pt-dark .pt-hero-label {
-  color: #9aa0a6;
-}
-
 /* Filled blue flips to a light fill with dark text in dark mode:
    white on #8ab4f8 is 2.1:1, #202124 on #8ab4f8 is 8.1:1. */
-#pt-floating-dock.pt-dark .pt-btn-primary,
+
 .pt-modal-dialog.pt-dark .pt-btn-primary {
   background: #8ab4f8;
   color: #202124;
 }
 
-#pt-floating-dock.pt-dark .pt-btn-primary:hover,
 .pt-modal-dialog.pt-dark .pt-btn-primary:hover {
   background: #aecbfa;
 }
 
-#pt-floating-dock.pt-dark .pt-btn-primary.pt-flow-btn,
-#pt-floating-dock.pt-dark .pt-btn-primary.pt-flow-btn:hover {
-  --pt-flow-color: #8ab4f8;
-  --pt-flow-on-color: #202124;
-  background: color-mix(in srgb, var(--pt-flow-color) 14%, transparent);
-}
-
-#pt-floating-dock.pt-dark .pt-btn-primary.pt-flow-btn {
-  color: var(--pt-flow-color);
-}
-
-#pt-floating-dock.pt-dark .pt-btn-primary.pt-flow-btn:hover {
-  color: var(--pt-flow-on-color);
-}
-
-/* :not(.running) so the amber running state below still wins */
-#pt-floating-dock.pt-dark .pt-timer-btn-start:not(.running) {
-  background: #8ab4f8;
-  border-color: #8ab4f8;
-  color: #202124;
-}
-
-#pt-floating-dock.pt-dark .pt-timer-btn-start:not(.running):hover {
-  background: #aecbfa;
-  border-color: #aecbfa;
-}
-
-#pt-floating-dock.pt-dark .pt-btn-secondary {
-  background: #2d2f31;
-  color: #e8eaed;
-  border-color: #5f6368;
-}
-
-#pt-floating-dock.pt-dark .pt-btn-secondary:hover {
-  background: #3c4043;
-}
-
-#pt-floating-dock.pt-dark .pt-btn-metric {
-  background: #2d2f31;
-  border-color: #5f6368;
-}
-
-#pt-floating-dock.pt-dark .pt-btn-metric:hover {
-  background: #35383b;
-}
-
-/* Red 600 is 2.5:1 on these dark surfaces; Red 200 is 5.0:1 */
-#pt-floating-dock.pt-dark .pt-btn-metric-undo:hover {
-  color: #f28b82;
-}
-
-#pt-floating-dock.pt-dark .pt-delete-tracker-btn:hover {
-  color: #f28b82;
-}
-
-#pt-floating-dock.pt-dark .pt-timer-widget {
-  background: #282a2d;
-  border-color: #3c4043;
-}
-
-#pt-floating-dock.pt-dark .pt-timer-title {
-  color: #8ab4f8;
-}
-
-#pt-floating-dock.pt-dark .pt-timer-hint {
-  color: #9aa0a6;
-}
-
-#pt-floating-dock.pt-dark .pt-timer-input {
-  background: #202124;
-  border-color: #5f6368;
-  color: #e8eaed;
-}
-
-#pt-floating-dock.pt-dark .pt-timer-input:focus {
-  border-color: #8ab4f8;
-  box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.2);
-}
-
-#pt-floating-dock.pt-dark .pt-timer-btn-reset {
-  background: #2d2f31;
-  border-color: #5f6368;
-  color: #e8eaed;
-}
-
-#pt-floating-dock.pt-dark .pt-timer-btn-reset:hover {
-  background: #3c4043;
-}
-
-#pt-floating-dock.pt-dark .pt-details-toggle {
-  color: #8ab4f8;
-}
-
-#pt-floating-dock.pt-dark .pt-details-form {
-  background: #282a2d;
-  border-color: #3c4043;
-}
-
-#pt-floating-dock.pt-dark .pt-details-form input,
-#pt-floating-dock.pt-dark .pt-details-form select {
-  background: #202124;
-  color: #e8eaed;
-  border-color: #5f6368;
-}
-
-#pt-floating-dock.pt-dark .pt-details-form input:focus,
-#pt-floating-dock.pt-dark .pt-details-form select:focus {
-  border-color: #8ab4f8;
-}
-
 /* The UA default placeholder grey is unreadable on #202124 */
-#pt-floating-dock.pt-dark .pt-details-form input::placeholder,
-#pt-floating-dock.pt-dark .pt-timer-input::placeholder,
+
 .pt-modal-dialog.pt-dark .pt-modal-form input::placeholder {
   color: #9aa0a6;
   opacity: 1;
 }
 
-#pt-floating-dock.pt-dark .pt-section-title {
-  color: #9aa0a6;
-}
-
-#pt-floating-dock.pt-dark #pt-add-tracker-btn {
-  color: #8ab4f8 !important;
-}
-
-#pt-floating-dock.pt-dark .pt-tracker-item:hover {
-  background: #282a2d;
-}
-
-#pt-floating-dock.pt-dark .pt-tracker-item span {
-  color: #e8eaed !important;
-}
-
-/* Keep the total count one step quieter than the tracker name */
-#pt-floating-dock.pt-dark .pt-tracker-right span {
-  color: #9aa0a6 !important;
-}
-
-#pt-floating-dock.pt-dark .pt-goal-tag {
-  background: #3c4043;
-  color: #bdc1c6 !important;
-}
-
-#pt-floating-dock.pt-dark .pt-goal-tag:hover {
-  background: #1a73e8;
-  color: #fff !important;
-}
-
-#pt-floating-dock.pt-dark .pt-activity-section {
-  border-top-color: #3c4043;
-}
-
-#pt-floating-dock.pt-dark .pt-activity-toggle {
-  color: #8ab4f8;
-}
-
-/* content.js sets every tab's background inline, so the old
-   :not([style*="background: rgb"]) guard matched nothing and unselected tabs
-   stayed white in dark mode. An unselected tab is always exactly #fff, which
-   serializes to rgb(255, 255, 255) — match on that instead. */
-#pt-floating-dock.pt-dark .pt-act-tab[style*="rgb(255, 255, 255)"] {
-  background: #2d2f31 !important;
-  color: #bdc1c6 !important;
-  border-color: #5f6368 !important;
-}
-
-#pt-floating-dock.pt-dark .pt-chart-container {
-  background: #282a2d;
-  border-color: #3c4043;
-}
-
-#pt-floating-dock.pt-dark .pt-bar {
-  background: #3c4043;
-}
-
-/* A near-black tooltip disappears on the dark chart; invert it */
-#pt-floating-dock.pt-dark .pt-bar-tooltip {
-  background: #e8eaed;
-  color: #202124;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-}
-
-#pt-floating-dock.pt-dark .pt-activity-stats {
-  background: #282a2d;
-  border-color: #3c4043;
-}
-
-#pt-floating-dock.pt-dark .pt-act-stat-num {
-  color: #e8eaed;
-}
-
-#pt-floating-dock.pt-dark .pt-act-stat-lbl {
-  color: #9aa0a6;
-}
-
-#pt-floating-dock.pt-dark .pt-dock-stats-bar {
-  background: #282a2d !important;
-  border-color: #3c4043 !important;
-}
-
-#pt-floating-dock.pt-dark .pt-dock-stats-bar .pt-stat-val {
-  color: #e8eaed !important;
-}
-
-#pt-floating-dock.pt-dark .pt-dock-stats-bar .pt-stat-lbl {
-  color: #9aa0a6 !important;
-}
-
-#pt-floating-dock.pt-dark .pt-dock-stats-bar .pt-stat-divider {
-  background: #3c4043 !important;
-}
-
 /* Modals Dark Mode */
+
 .pt-modal-dialog.pt-dark {
   background: #202124;
   border: 1px solid #5f6368;
@@ -1582,28 +333,12 @@ aside .pt-quick-add-cell {
   color: #9aa0a6;
 }
 
-.pt-modal-dialog.pt-dark .pt-modal-form input,
-.pt-modal-dialog.pt-dark .pt-modal-form select {
+.pt-modal-dialog.pt-dark .pt-modal-form input, .pt-modal-dialog.pt-dark .pt-modal-form select {
   background: #282a2d;
   color: #e8eaed;
   border-color: #5f6368;
 }
 
-.pt-modal-dialog.pt-dark .pt-modal-form input:focus,
-.pt-modal-dialog.pt-dark .pt-modal-form select:focus {
+.pt-modal-dialog.pt-dark .pt-modal-form input:focus, .pt-modal-dialog.pt-dark .pt-modal-form select:focus {
   border-color: #8ab4f8;
-}
-
-.pt-modal-dialog.pt-dark .pt-btn-secondary {
-  background: #2d2f31;
-  color: #e8eaed;
-  border-color: #5f6368;
-}
-
-.pt-modal-dialog.pt-dark .pt-btn-secondary:hover {
-  background: #3c4043;
-}
-
-.pt-modal-dialog.pt-dark .pt-color-btn.pt-selected {
-  border-color: #fff;
 }

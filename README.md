@@ -17,7 +17,7 @@ A Chrome extension that counts applications sent and problems solved, shows ever
                                 │
                         chrome.storage.local  ◄────  popup (+1 / -1, widgets)
                                 │
-                  Google Calendar overlay: badges, dock, timer
+                  Google Calendar overlay: day badges, quick add
 ```
 
 There is no build step.

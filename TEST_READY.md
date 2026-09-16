@@ -13,10 +13,11 @@ The test architecture provides 100% deterministic, in-memory testing for all Chr
 - `test/metrics.test.js`: Custom tracker creation, default metrics protection (`jobs`, `leetcode`), and historical log retention upon custom tracker deletion.
 - `test/auth.test.js`: Google OAuth2 identity flow, direct email sign-in, email normalization, session management, token eviction, and auth change events.
 - `test/isolation.test.js`: Multi-account data isolation (User A vs User B vs Anonymous), cross-account mutation prevention (delete/undo/tracker tampering rejection).
-- `test/events.test.js`: Real-time storage change events, cross-tab and simultaneous popup/calendar overlay dock synchronization.
+- `test/events.test.js`: Real-time storage change events, cross-tab and simultaneous popup/calendar overlay synchronization.
 - `test/mock_dom.js`: In-memory DOM (selector engine subset, bubbling events, shadow roots) with an instrumented `MutationObserver` so leaked observers are countable.
 - `test/autotracker.test.js`: Auto-tracker registry and URL matching for all six adapters, dedupe TTL/LRU cache with session-storage persistence and local fallback, dispatch into `TrackerStorage.addLog`, closed-shadow toast, LeetCode/NeetCode/ATS detection flows (submit-armed observers, arm windows, in-place text updates), entry-point SPA remounting, and zero-leak teardown.
 - `test/widgets.test.js`: Popup widget layout (`shared/widgets.js`): registry and defaults, defensive normalization of stored layouts, add / move / update / remove with persistence and serialized bursts, singleton enforcement, tracker-binding resolution, and LeetCode-only visibility.
+- `test/timer.test.js`: Google Calendar date-key decoding across 1990 through 2100, day-modal HTML escaping, and the popup countdown's hydrate-on-open guard.
 - `test/calendar.test.js`: Google Calendar overlay: one badge per date when several grid cells decode to the same day (Week and Day views), header and sliver cells skipped, idempotent re-render, stale duplicate cleanup including nested cells, and Month view unchanged.
 - `test/emoji.test.js`: Repository-wide Unicode and regex scanner asserting 0 emojis across all project files.
 - `test/manifest.test.js`: Manifest V3 schema and permission validation (`storage`, `identity`, host permissions, content script paths, auto-tracker load order and match patterns).

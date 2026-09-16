@@ -617,7 +617,7 @@ const TrackerStorage = (() => {
       });
 
       // Goal-based streaks per tracker. currentStreak stays the jobs streak
-      // for the calendar dock and older callers.
+      // for older callers.
       const streaks = {};
       const longestStreaks = {};
       metrics.forEach(m => {

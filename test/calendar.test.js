@@ -25,8 +25,7 @@ function loadContentScript() {
   return { mock, doc, content };
 }
 
-function teardown(content) {
-  if (content && typeof content.pauseDockTimer === 'function') content.pauseDockTimer();
+function teardown() {
   delete global.document;
   delete global.window;
   delete global.TrackerAuth;
@@ -83,8 +82,7 @@ async function run() {
 
     content.__setOverlayState({
       metrics: METRICS,
-      stats: { dailyMap: { '2026-09-14': { jobs: 1 }, '2026-09-15': { jobs: 2, leetcode: 2 } } },
-      visible: ['jobs', 'leetcode']
+      stats: { dailyMap: { '2026-09-14': { jobs: 1 }, '2026-09-15': { jobs: 2, leetcode: 2 } } }
     });
 
     content.renderBadges();
@@ -119,7 +117,7 @@ async function run() {
     assert.strictEqual(timed14.querySelector('.pt-badge-text').textContent, '3 Jobs Applied');
     assert.strictEqual(overlaysIn(doc).length, 2);
 
-    teardown(content);
+    teardown();
     console.log('[PASS] Week view: a date with two grid cells gets exactly one badge, in the lower cell');
   }
 
@@ -142,8 +140,7 @@ async function run() {
 
     content.__setOverlayState({
       metrics: METRICS,
-      stats: { dailyMap: { '2026-09-14': { jobs: 1 } } },
-      visible: ['jobs', 'leetcode']
+      stats: { dailyMap: { '2026-09-14': { jobs: 1 } } }
     });
     content.renderBadges();
 
@@ -158,7 +155,7 @@ async function run() {
     content.renderBadges();
     assert.strictEqual(overlaysIn(doc).length, 1);
 
-    teardown(content);
+    teardown();
     console.log('[PASS] Stale duplicate badges are cleaned up, nested same-date cells included');
   }
 
@@ -169,8 +166,7 @@ async function run() {
     cells.forEach(c => doc.body.appendChild(c));
     content.__setOverlayState({
       metrics: METRICS,
-      stats: { dailyMap: { '2026-09-13': { leetcode: 1 } } },
-      visible: ['jobs', 'leetcode']
+      stats: { dailyMap: { '2026-09-13': { leetcode: 1 } } }
     });
     content.renderBadges();
     assert.strictEqual(overlaysIn(doc).length, 1);
@@ -179,12 +175,7 @@ async function run() {
     assert.strictEqual(cells[0].querySelectorAll('.pt-quick-add-cell').length, 1, 'empty days still get a quick-add button');
     assert.strictEqual(cells[0].querySelectorAll('.pt-cell-overlay').length, 0, 'empty days get no overlay');
 
-    // Hiding a tracker removes its badge on the next render.
-    content.__setOverlayState({ visible: ['jobs'] });
-    content.renderBadges();
-    assert.strictEqual(overlaysIn(doc).length, 0, 'a hidden tracker leaves no overlay behind');
-
-    teardown(content);
+    teardown();
     console.log('[PASS] Month view: single cells render one badge, empty days only a quick-add');
   }
 

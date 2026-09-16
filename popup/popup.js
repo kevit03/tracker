@@ -147,9 +147,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // time it opens. background/service-worker.js watches this same key and
   // mirrors it into chrome.alarms so zero is announced even with everything
   // closed.
-  //
-  // This record is deliberately independent of the in-calendar dock timer
-  // ('pt_timer_dock'). The two never share state and never sync.
   const TIMER_KEY = 'pt_timer_popup';
   const IDLE_TIMER = {
     status: 'idle',

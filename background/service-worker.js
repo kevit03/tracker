@@ -8,7 +8,6 @@
 // Timer state contract. One record per surface, written only by that surface:
 //
 //   chrome.storage.local['pt_timer_popup']   owned by popup/popup.js
-//   chrome.storage.local['pt_timer_dock']    owned by content/content.js
 //
 //   {
 //     status: 'idle' | 'running' | 'paused' | 'finished',
@@ -19,16 +18,18 @@
 //     updatedAt: epoch ms
 //   }
 //
-// The two timers are deliberately independent: they never share a record and
-// never sync to each other. This worker does not drive them. It mirrors any
-// 'running' record into chrome.alarms so the countdown can still complete with
-// every page closed, and writes a record exactly once per countdown, to close
-// it out at zero.
+// This worker does not drive the timer. It mirrors a 'running' record into
+// chrome.alarms so the countdown can still complete with every page closed,
+// and writes a record exactly once per countdown, to close it out at zero.
 
 const TIMER_SURFACES = {
-  pt_timer_popup: { alarm: 'pt-timer-popup', label: 'Popup timer' },
-  pt_timer_dock: { alarm: 'pt-timer-dock', label: 'Calendar dock timer' }
+  pt_timer_popup: { alarm: 'pt-timer-popup', label: 'Popup timer' }
 };
+
+// The calendar dock and its timer were removed in 1.3; an install upgrading
+// from an older build may still hold its record and alarm.
+const LEGACY_DOCK_TIMER_KEY = 'pt_timer_dock';
+const LEGACY_DOCK_ALARM = 'pt-timer-dock';
 
 // Matches MAX_TIMER_SECONDS in shared/storage.js. A free-text field must never
 // be able to arm an alarm further out than a day.
@@ -155,6 +156,12 @@ async function reconcileAll() {
   for (const key of Object.keys(TIMER_SURFACES)) {
     const state = await readTimer(key);
     await syncAlarm(key, state);
+  }
+  try {
+    await chrome.alarms.clear(LEGACY_DOCK_ALARM);
+    chrome.storage.local.remove(LEGACY_DOCK_TIMER_KEY, () => { void chrome.runtime.lastError; });
+  } catch (e) {
+    // Nothing to clean up on a fresh install.
   }
 }
 

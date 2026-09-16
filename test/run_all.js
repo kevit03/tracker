@@ -11,7 +11,7 @@ const SUITES = [
   { name: 'Multi-User Isolation Suite', file: './isolation.test.js' },
   { name: 'Event & Real-Time Sync Suite', file: './events.test.js' },
   { name: 'Cross-Context Concurrency Suite', file: './concurrency.test.js' },
-  { name: 'Solve Timer & Date Decoding Suite', file: './timer.test.js' },
+  { name: 'Date Decoding & Popup Timer Guard Suite', file: './timer.test.js' },
   { name: 'Auto-Tracker Adapter & Dedupe Suite', file: './autotracker.test.js' },
   { name: 'Popup Widget Layout Suite', file: './widgets.test.js' },
   { name: 'Calendar Overlay Suite', file: './calendar.test.js' },
