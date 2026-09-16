@@ -69,6 +69,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function closeModal(modal) {
     const target = modal || openModalEl;
     if (!target) return;
+    if (typeof closeTokenPopover === 'function') closeTokenPopover(false);
     target.classList.add('hidden');
     if (target === openModalEl) {
       openModalEl = null;
@@ -1184,60 +1185,225 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   el('close-add-widget-modal').addEventListener('click', () => closeModal(el('add-widget-modal')));
 
+  /* Token popover: one floating list shared by every token value button.
+     Anchored under (or above) the button that opened it, arrow-key
+     navigable, closed by Escape, outside pointer, or a pick. Escape is
+     caught in the capture phase so the modal underneath stays open. */
+  const tokenPopover = el('token-popover');
+  const tokenPopoverList = el('token-popover-list');
+  let popoverState = null; // { anchor, items, onPick, active }
+
+  function closeTokenPopover(restoreFocus) {
+    if (!popoverState) return;
+    const { anchor } = popoverState;
+    popoverState = null;
+    tokenPopover.classList.add('hidden');
+    tokenPopoverList.innerHTML = '';
+    anchor.setAttribute('aria-expanded', 'false');
+    anchor.classList.remove('token-open');
+    if (restoreFocus !== false) anchor.focus();
+  }
+
+  function placeTokenPopover(anchor) {
+    const a = anchor.getBoundingClientRect();
+    const w = tokenPopover.offsetWidth;
+    const h = tokenPopover.offsetHeight;
+    const gap = 6;
+    let left = Math.max(8, Math.min(a.left, window.innerWidth - w - 8));
+    let top = a.bottom + gap;
+    if (top + h > window.innerHeight - 8) top = Math.max(8, a.top - gap - h);
+    tokenPopover.style.left = left + 'px';
+    tokenPopover.style.top = top + 'px';
+  }
+
+  function setPopoverActive(index) {
+    if (!popoverState) return;
+    const options = tokenPopoverList.children;
+    const clamped = Math.max(0, Math.min(index, options.length - 1));
+    popoverState.active = clamped;
+    Array.prototype.forEach.call(options, (li, i) => {
+      li.classList.toggle('active', i === clamped);
+    });
+    tokenPopoverList.setAttribute('aria-activedescendant', options[clamped] ? options[clamped].id : '');
+    if (options[clamped] && typeof options[clamped].scrollIntoView === 'function') {
+      options[clamped].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  // items: [{ value, label, selected }]. onPick(value) runs after the popover closes.
+  function openTokenPopover(anchor, items, onPick) {
+    if (popoverState && popoverState.anchor === anchor) { closeTokenPopover(); return; }
+    closeTokenPopover(false);
+    tokenPopoverList.innerHTML = '';
+    items.forEach((item, i) => {
+      const li = document.createElement('li');
+      li.id = 'token-option-' + i;
+      li.setAttribute('role', 'option');
+      li.setAttribute('aria-selected', item.selected ? 'true' : 'false');
+      li.dataset.value = item.value;
+      const label = document.createElement('span');
+      label.className = 'token-option-label';
+      label.textContent = item.label;
+      li.appendChild(label);
+      if (item.selected) {
+        const check = document.createElement('span');
+        check.className = 'token-option-check';
+        check.innerHTML = '<svg viewBox="0 0 12 12" width="11" height="11" fill="none" aria-hidden="true" focusable="false"><path d="M2.5 6.2l2.2 2.3L9.5 3.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        li.appendChild(check);
+      }
+      li.addEventListener('mouseenter', () => setPopoverActive(i));
+      li.addEventListener('click', () => pickPopover(i));
+      tokenPopoverList.appendChild(li);
+    });
+    popoverState = { anchor, items, onPick, active: 0 };
+    anchor.setAttribute('aria-expanded', 'true');
+    anchor.classList.add('token-open');
+    tokenPopover.classList.remove('hidden');
+    placeTokenPopover(anchor);
+    const selectedIdx = Math.max(0, items.findIndex(i => i.selected));
+    setPopoverActive(selectedIdx);
+    tokenPopoverList.focus();
+  }
+
+  function pickPopover(index) {
+    if (!popoverState) return;
+    const { items, onPick } = popoverState;
+    const item = items[index];
+    closeTokenPopover();
+    if (item) onPick(item.value);
+  }
+
+  tokenPopoverList.addEventListener('keydown', (e) => {
+    if (!popoverState) return;
+    const last = popoverState.items.length - 1;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setPopoverActive(popoverState.active + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setPopoverActive(popoverState.active - 1); }
+    else if (e.key === 'Home') { e.preventDefault(); setPopoverActive(0); }
+    else if (e.key === 'End') { e.preventDefault(); setPopoverActive(last); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickPopover(popoverState.active); }
+    else if (e.key === 'Tab') { closeTokenPopover(); }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (!popoverState || e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    closeTokenPopover();
+  }, true);
+
+  document.addEventListener('pointerdown', (e) => {
+    if (!popoverState) return;
+    if (tokenPopover.contains(e.target) || popoverState.anchor.contains(e.target)) return;
+    closeTokenPopover(false);
+  }, true);
+
+  window.addEventListener('resize', () => { if (popoverState) placeTokenPopover(popoverState.anchor); });
+
+  // A changed value flashes once, the same cue as the filter bar's tokens.
+  function flashToken(btn) {
+    btn.classList.remove('token-flash');
+    void btn.offsetWidth;
+    btn.classList.add('token-flash');
+  }
+
   /* Widget settings */
+  let widgetDraft = null; // { metricId, days, showStats }
+
+  function metricLabelFor(metricId) {
+    if (metricId === WidgetLayout.ACTIVE) return 'Follow the selected tab';
+    const m = metrics.find(x => x.id === metricId);
+    return m ? 'Always ' + m.name : 'Follow the selected tab';
+  }
+
+  function renderWidgetTokens() {
+    const item = widgetById(settingsWidgetId);
+    if (!item || !widgetDraft) return;
+    const spec = WidgetLayout.TYPES[item.type];
+    const bindable = 'metricId' in spec.defaults;
+    const isActivity = item.type === 'activity';
+
+    el('widget-token-metric').classList.toggle('hidden', !bindable);
+    el('widget-metric-btn').textContent = metricLabelFor(widgetDraft.metricId);
+
+    el('widget-token-days').classList.toggle('hidden', !isActivity);
+    el('widget-token-stats').classList.toggle('hidden', !isActivity);
+    if (isActivity) {
+      el('widget-days-btn').textContent = widgetDraft.days + ' days';
+      const statsBtn = el('widget-stats-btn');
+      statsBtn.textContent = widgetDraft.showStats ? 'Shown' : 'Hidden';
+      statsBtn.setAttribute('aria-pressed', widgetDraft.showStats ? 'true' : 'false');
+      statsBtn.classList.toggle('token-muted', !widgetDraft.showStats);
+    }
+
+    const index = widgetItems.findIndex(i => i.id === settingsWidgetId);
+    el('widget-position-text').textContent = (index + 1) + ' of ' + widgetItems.length;
+    el('widget-move-up-btn').disabled = index <= 0;
+    el('widget-move-down-btn').disabled = index >= widgetItems.length - 1;
+  }
+
   function openWidgetSettings(id) {
     const item = widgetById(id);
     if (!item) return;
     settingsWidgetId = id;
     widgetRemoveArmed = false;
+    widgetDraft = {
+      metricId: metrics.some(m => m.id === item.options.metricId) ? item.options.metricId : WidgetLayout.ACTIVE,
+      days: item.options.days || 30,
+      showStats: item.options.showStats !== false
+    };
     const spec = WidgetLayout.TYPES[item.type];
     const bindable = 'metricId' in spec.defaults;
 
     el('widget-settings-title').textContent = spec.name;
-    el('widget-metric-group').classList.toggle('hidden', !bindable);
-    if (bindable) {
-      const select = el('widget-metric-select');
-      select.innerHTML = '';
-      const follow = document.createElement('option');
-      follow.value = WidgetLayout.ACTIVE;
-      follow.textContent = 'Follow the selected tab';
-      select.appendChild(follow);
-      metrics.forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = 'Always ' + m.name;
-        select.appendChild(opt);
-      });
-      select.value = metrics.some(m => m.id === item.options.metricId) ? item.options.metricId : WidgetLayout.ACTIVE;
-    }
+    renderWidgetTokens();
 
-    const isActivity = item.type === 'activity';
-    el('widget-days-group').classList.toggle('hidden', !isActivity);
-    el('widget-stats-group').classList.toggle('hidden', !isActivity);
-    if (isActivity) {
-      el('widget-days-select').value = String(item.options.days);
-      el('widget-stats-check').checked = !!item.options.showStats;
-    }
-
-    const index = widgetItems.findIndex(i => i.id === id);
-    el('widget-move-up-btn').disabled = index <= 0;
-    el('widget-move-down-btn').disabled = index >= widgetItems.length - 1;
-
-    el('remove-widget-btn').textContent = 'Remove widget';
+    el('remove-widget-btn').querySelector('span').textContent = 'Remove widget';
+    el('remove-widget-btn').classList.remove('armed');
     el('widget-settings-hint').textContent = spec.leetcodeOnly
       ? 'This widget only appears while the LeetCode tracker is selected.'
       : (spec.singleton ? 'Removing this widget hides it; add it back any time from the plus button.' : 'Removing a widget never deletes any logged data.');
 
-    openModal(el('widget-settings-modal'), bindable ? 'widget-metric-select' : 'widget-move-up-btn');
+    openModal(el('widget-settings-modal'), bindable ? 'widget-metric-btn' : 'widget-move-up-btn');
   }
+
+  el('widget-metric-btn').addEventListener('click', () => {
+    if (!widgetDraft) return;
+    const items = [{ value: WidgetLayout.ACTIVE, label: 'Follow the selected tab', selected: widgetDraft.metricId === WidgetLayout.ACTIVE }]
+      .concat(metrics.map(m => ({ value: m.id, label: 'Always ' + m.name, selected: widgetDraft.metricId === m.id })));
+    openTokenPopover(el('widget-metric-btn'), items, (value) => {
+      if (value === widgetDraft.metricId) return;
+      widgetDraft.metricId = value;
+      renderWidgetTokens();
+      flashToken(el('widget-metric-btn'));
+    });
+  });
+
+  el('widget-days-btn').addEventListener('click', () => {
+    if (!widgetDraft) return;
+    const items = WidgetLayout.ACTIVITY_DAYS.map(d => ({ value: String(d), label: d + ' days', selected: widgetDraft.days === d }));
+    openTokenPopover(el('widget-days-btn'), items, (value) => {
+      const days = parseInt(value, 10);
+      if (days === widgetDraft.days) return;
+      widgetDraft.days = days;
+      renderWidgetTokens();
+      flashToken(el('widget-days-btn'));
+    });
+  });
+
+  el('widget-stats-btn').addEventListener('click', () => {
+    if (!widgetDraft) return;
+    widgetDraft.showStats = !widgetDraft.showStats;
+    renderWidgetTokens();
+    flashToken(el('widget-stats-btn'));
+  });
 
   async function moveSettingsWidget(delta) {
     if (!settingsWidgetId) return;
     const ok = await applyLayout(WidgetLayout.move(settingsWidgetId, delta));
     if (!ok) return;
-    const index = widgetItems.findIndex(i => i.id === settingsWidgetId);
-    el('widget-move-up-btn').disabled = index <= 0;
-    el('widget-move-down-btn').disabled = index >= widgetItems.length - 1;
+    renderWidgetTokens();
+    flashToken(el('widget-position-text'));
   }
 
   el('widget-move-up-btn').addEventListener('click', () => moveSettingsWidget(-1));
@@ -1246,12 +1412,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   el('widget-settings-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const item = widgetById(settingsWidgetId);
-    if (!item) { closeModal(el('widget-settings-modal')); return; }
+    if (!item || !widgetDraft) { closeModal(el('widget-settings-modal')); return; }
     const patch = {};
-    if ('metricId' in WidgetLayout.TYPES[item.type].defaults) patch.metricId = el('widget-metric-select').value;
+    if ('metricId' in WidgetLayout.TYPES[item.type].defaults) patch.metricId = widgetDraft.metricId;
     if (item.type === 'activity') {
-      patch.days = parseInt(el('widget-days-select').value, 10);
-      patch.showStats = el('widget-stats-check').checked;
+      patch.days = widgetDraft.days;
+      patch.showStats = widgetDraft.showStats;
     }
     const ok = await applyLayout(WidgetLayout.update(item.id, patch), 'Widget updated.');
     if (ok) closeModal(el('widget-settings-modal'));
@@ -1262,13 +1428,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btn = el('remove-widget-btn');
     if (!widgetRemoveArmed) {
       widgetRemoveArmed = true;
-      btn.textContent = 'Select again to confirm';
+      btn.querySelector('span').textContent = 'Select again to confirm';
+      btn.classList.add('armed');
       return;
     }
     const target = settingsWidgetId;
     settingsWidgetId = null;
     widgetRemoveArmed = false;
-    btn.textContent = 'Remove widget';
+    btn.querySelector('span').textContent = 'Remove widget';
+    btn.classList.remove('armed');
     const ok = await applyLayout(WidgetLayout.remove(target), 'Widget removed.');
     if (ok) closeModal(el('widget-settings-modal'));
   });

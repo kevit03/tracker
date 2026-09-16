@@ -1473,27 +1473,331 @@ body.pt-dark .modal-content.glass-card {
   cursor: default;
 }
 
-.widget-order-row {
+/* Token bar (widget settings).
+   Each setting is a segmented pill, Field | Value, after the filter-token
+   idiom: the field names the setting, the value is a button that opens a
+   popover list, and a change flashes the segment once. Position carries
+   two chevron segments instead of a popover. */
+.token-bar {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+  margin-top: 4px;
 }
 
-.widget-order-row .btn-cancel {
-  flex: 1;
+.token-bar + .modal-note {
+  margin-top: 12px;
 }
 
-.widget-order-row .btn-cancel:disabled {
-  opacity: 0.45;
+.token {
+  display: inline-flex;
+  align-items: stretch;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--token-border);
+  background: var(--token-bg);
+  max-width: 100%;
+}
+
+:root {
+  --token-bg: rgba(32, 33, 36, 0.045);
+  --token-border: rgba(32, 33, 36, 0.09);
+  --token-hover: rgba(32, 33, 36, 0.06);
+  --token-active: rgba(32, 33, 36, 0.09);
+  --token-sep: rgba(32, 33, 36, 0.08);
+  --token-flash: rgba(26, 115, 232, 0.18);
+}
+
+body.pt-dark {
+  --token-bg: rgba(255, 255, 255, 0.05);
+  --token-border: rgba(255, 255, 255, 0.08);
+  --token-hover: rgba(255, 255, 255, 0.08);
+  --token-active: rgba(255, 255, 255, 0.12);
+  --token-sep: rgba(255, 255, 255, 0.08);
+  --token-flash: rgba(138, 180, 248, 0.22);
+}
+
+.token-field,
+.token-value,
+.token-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  font-family: inherit;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+}
+
+.token-field {
+  font-weight: 500;
+  color: var(--text-sec);
+}
+
+.token-field svg {
+  flex-shrink: 0;
+}
+
+.token-value {
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s;
+}
+
+.token-value.token-muted {
+  color: var(--text-sec);
+  font-weight: 500;
+}
+
+.token-value.token-static {
+  cursor: default;
+  font-weight: 500;
+  color: var(--text-sec);
+}
+
+.token-icon-btn {
+  padding: 4px 7px;
+  color: var(--text-sec);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+button.token-value:hover,
+.token-icon-btn:hover:not(:disabled) {
+  background: var(--token-hover);
+}
+
+.token-icon-btn:hover:not(:disabled) {
+  color: var(--text-main);
+}
+
+.token-value.token-open {
+  background: var(--token-active);
+}
+
+.token-icon-btn:disabled {
+  opacity: 0.35;
   cursor: default;
 }
 
-.check-row {
+button.token-value:active,
+.token-icon-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.token-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--token-sep);
+  flex-shrink: 0;
+}
+
+button.token-value:focus-visible,
+.token-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
+}
+
+.token-flash {
+  animation: token-flash 620ms ease-out;
+}
+
+@keyframes token-flash {
+  0% { background-color: var(--token-flash); }
+  100% { background-color: transparent; }
+}
+
+/* Popover list for a token value. Fixed so it can escape the modal box. */
+.token-popover {
+  position: fixed;
+  z-index: 200;
+  min-width: 13rem;
+  max-width: 18rem;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--token-border);
+  background: var(--bg-page);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.08);
+  animation: token-popover-in 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+body.pt-dark .token-popover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes token-popover-in {
+  from { opacity: 0; transform: translateY(-3px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.token-popover ul {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  outline: none;
+}
+
+.token-popover li {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
   font-size: 12px;
   color: var(--text-main);
   cursor: pointer;
+}
+
+.token-popover li.active {
+  background: var(--hover);
+}
+
+.token-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.token-option-check {
+  margin-left: auto;
+  display: inline-flex;
+  color: var(--text-sec);
+}
+
+/* Remove: quiet by default, the destructive red only once it is armed */
+.widget-actions {
+  align-items: center;
+}
+
+.token-remove-btn {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-sec);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.token-remove-btn:hover,
+.token-remove-btn.armed {
+  background: var(--token-hover);
+  color: var(--red);
+}
+
+.token-remove-btn.armed {
+  font-weight: 600;
+}
+
+.token-remove-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+/* Interactive hover button (Save). At rest a bordered pill with a small
+   blue dot; on hover or keyboard focus the label slides out, a second label
+   plus arrow slides in, and the dot grows to fill the pill. */
+.hover-btn {
+  position: relative;
+  overflow: hidden;
+  min-width: 96px;
+  padding: 7px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-page);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+}
+
+.hover-btn-text {
+  display: inline-block;
+  transform: translateX(2px);
+  transition: transform 0.3s, opacity 0.3s;
+}
+
+.hover-btn-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--on-blue);
+  opacity: 0;
+  transform: translateX(48px);
+  transition: transform 0.3s, opacity 0.3s;
+}
+
+.hover-btn-dot {
+  position: absolute;
+  left: 20%;
+  top: 40%;
+  width: 8px;
+  height: 8px;
+  border-radius: 8px;
+  background: var(--blue);
+  z-index: 1;
+  transition: left 0.3s, top 0.3s, width 0.3s, height 0.3s, transform 0.3s;
+}
+
+.hover-btn:hover .hover-btn-text,
+.hover-btn:focus-visible .hover-btn-text {
+  transform: translateX(48px);
+  opacity: 0;
+}
+
+.hover-btn:hover .hover-btn-overlay,
+.hover-btn:focus-visible .hover-btn-overlay {
+  transform: translateX(-2px);
+  opacity: 1;
+}
+
+.hover-btn:hover .hover-btn-dot,
+.hover-btn:focus-visible .hover-btn-dot {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  transform: scale(1.8);
+}
+
+.hover-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-page), 0 0 0 4px var(--focus-ring);
+}
+
+.hover-btn:active {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .token-flash { animation: none; }
+  .token-popover { animation: none; }
+  .hover-btn-text,
+  .hover-btn-overlay,
+  .hover-btn-dot { transition: none; }
 }
 
 /* Destructive action sits opposite the confirm pair in a .modal-actions row */

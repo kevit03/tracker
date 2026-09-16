@@ -225,7 +225,8 @@
       </div>
     </div>
 
-    <!-- Widget settings -->
+    <!-- Widget settings: a token bar. Each setting is a Field | Value pill
+         whose value opens a popover list; Position carries its own arrows. -->
     <div id="widget-settings-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="widget-settings-title">
       <div class="modal-content">
         <div class="modal-header">
@@ -233,36 +234,49 @@
           <button id="close-widget-settings-modal" class="close-btn" type="button" aria-label="Close widget settings dialog">&times;</button>
         </div>
         <form id="widget-settings-form">
-          <div class="form-group" id="widget-metric-group">
-            <label for="widget-metric-select">Tracker</label>
-            <select id="widget-metric-select"></select>
-          </div>
-          <div class="form-group hidden" id="widget-days-group">
-            <label for="widget-days-select">Chart length</label>
-            <select id="widget-days-select">
-              <option value="7">7 days</option>
-              <option value="14">14 days</option>
-              <option value="30">30 days</option>
-            </select>
-          </div>
-          <div class="form-group hidden" id="widget-stats-group">
-            <label class="check-row"><input type="checkbox" id="widget-stats-check" /> Show totals under the chart</label>
-          </div>
-          <div class="form-group">
-            <label>Position</label>
-            <div class="widget-order-row">
-              <button type="button" id="widget-move-up-btn" class="btn-cancel">Move up</button>
-              <button type="button" id="widget-move-down-btn" class="btn-cancel">Move down</button>
+          <div class="token-bar" role="group" aria-label="Widget settings">
+            <div class="token" id="widget-token-metric">
+              <span class="token-field"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5" stroke="currentColor" stroke-width="1.5" opacity="0.85"/><path d="M8 8 L8 3 A5 5 0 0 1 12.3 5.5 Z" fill="currentColor"/></svg>Tracker</span>
+              <span class="token-sep" aria-hidden="true"></span>
+              <button type="button" class="token-value" id="widget-metric-btn" aria-haspopup="listbox" aria-expanded="false">Follow the selected tab</button>
+            </div>
+            <div class="token hidden" id="widget-token-days">
+              <span class="token-field"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true" focusable="false"><rect x="2.5" y="9" width="3" height="4.5" rx="1" fill="currentColor"/><rect x="6.5" y="6" width="3" height="7.5" rx="1" fill="currentColor"/><rect x="10.5" y="3" width="3" height="10.5" rx="1" fill="currentColor"/></svg>Length</span>
+              <span class="token-sep" aria-hidden="true"></span>
+              <button type="button" class="token-value" id="widget-days-btn" aria-haspopup="listbox" aria-expanded="false">30 days</button>
+            </div>
+            <div class="token hidden" id="widget-token-stats">
+              <span class="token-field"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true" focusable="false"><path d="M3 12.5h10M3 8.5h10M3 4.5h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.85"/></svg>Totals</span>
+              <span class="token-sep" aria-hidden="true"></span>
+              <button type="button" class="token-value" id="widget-stats-btn" aria-pressed="true" title="Show or hide the totals row under the chart">Shown</button>
+            </div>
+            <div class="token" id="widget-token-position">
+              <span class="token-field"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true" focusable="false"><path d="M8 2.5v11M4.5 6 8 2.5 11.5 6M4.5 10 8 13.5 11.5 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Position</span>
+              <span class="token-sep" aria-hidden="true"></span>
+              <span class="token-value token-static" id="widget-position-text">1 of 1</span>
+              <span class="token-sep" aria-hidden="true"></span>
+              <button type="button" class="token-icon-btn" id="widget-move-up-btn" title="Move up" aria-label="Move widget up"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" aria-hidden="true" focusable="false"><path d="M2.5 7.5 6 4l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <span class="token-sep" aria-hidden="true"></span>
+              <button type="button" class="token-icon-btn" id="widget-move-down-btn" title="Move down" aria-label="Move widget down"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" aria-hidden="true" focusable="false"><path d="M2.5 4.5 6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             </div>
           </div>
           <p class="modal-note" id="widget-settings-hint"></p>
-          <div class="modal-actions">
-            <button type="button" id="remove-widget-btn" class="account-signout-btn danger-left">Remove widget</button>
+          <div class="modal-actions widget-actions">
+            <button type="button" id="remove-widget-btn" class="token-remove-btn"><svg viewBox="0 0 12 12" width="12" height="12" fill="none" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>Remove widget</span></button>
             <button type="button" id="cancel-widget-settings-btn" class="btn-cancel">Cancel</button>
-            <button type="submit" class="btn-submit">Save</button>
+            <button type="submit" class="hover-btn" id="save-widget-btn">
+              <span class="hover-btn-text">Save</span>
+              <span class="hover-btn-overlay" aria-hidden="true"><span>Save</span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+              <span class="hover-btn-dot" aria-hidden="true"></span>
+            </button>
           </div>
         </form>
       </div>
+    </div>
+
+    <!-- Shared popover for token values (positioned by popup.js) -->
+    <div id="token-popover" class="token-popover hidden" role="dialog" aria-label="Choose a value">
+      <ul id="token-popover-list" role="listbox" tabindex="-1"></ul>
     </div>
 
     <!-- Direct email sign-in for unpacked builds with no GCP OAuth client paired -->
