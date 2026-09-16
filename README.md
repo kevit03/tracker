@@ -42,7 +42,7 @@ The counter card at the top is fixed: big number, `+1`, `-1`. Everything under i
 | Solve Time Stats | Today, all time, average, fastest |
 | Add Details | Company, role, and notes for the next entry |
 
-The centered **+** adds a widget. Hover one and a gear appears: pin it to a tracker or let it follow the selected tab, set chart length, move it up or down, remove it. Pin two Activity Charts to two trackers and compare. The layout persists in `chrome.storage.local['pt_widgets']`.
+The centered **+** adds a widget. Hover one and a grip and a gear appear: drag the grip to reorder, or open the gear to pin the widget to a tracker or let it follow the selected tab, set chart length, nudge its position, or remove it. Pin two Activity Charts to two trackers and compare. The layout persists in `chrome.storage.local['pt_widgets']`.
 
 On the LeetCode tab, **Space** starts and pauses the timer when nothing else has focus.
 

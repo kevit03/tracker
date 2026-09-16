@@ -64,13 +64,15 @@ const WidgetLayout = (() => {
     }
   };
 
+  // Fixed ids: a fresh install renders these before anything is stored, and
+  // an edit made then must still find its widget on the next read.
   const DEFAULT_ITEMS = [
-    { type: 'timer' },
-    { type: 'timeStats' },
-    { type: 'goal' },
-    { type: 'details' },
-    { type: 'summary' },
-    { type: 'activity' }
+    { id: 'timer-default', type: 'timer' },
+    { id: 'timeStats-default', type: 'timeStats' },
+    { id: 'goal-default', type: 'goal' },
+    { id: 'details-default', type: 'details' },
+    { id: 'summary-default', type: 'summary' },
+    { id: 'activity-default', type: 'activity' }
   ];
 
   function newId(type) {
@@ -221,12 +223,16 @@ const WidgetLayout = (() => {
     isVisible,
     availableTypes,
 
+    // Nothing stored yet means the default layout; persist it so later edits
+    // and other contexts all see the same ids.
     async load() {
-      return normalize(await readRaw());
+      const raw = await readRaw();
+      if (raw === null) return writeRaw(normalize(null));
+      return normalize(raw);
     },
 
     async reset() {
-      return mutate(() => DEFAULT_ITEMS.map(i => ({ type: i.type })));
+      return mutate(() => DEFAULT_ITEMS.map(i => ({ id: i.id, type: i.type })));
     },
 
     async add(type, options) {
@@ -247,6 +253,22 @@ const WidgetLayout = (() => {
         const merged = Object.assign({}, i.options, patch && patch.options ? patch.options : patch);
         return { id: i.id, type: i.type, options: normalizeOptions(i.type, merged) };
       }));
+    },
+
+    // Drop `id` immediately before `beforeId`, or at the end when beforeId is
+    // null. Drag and drop works on the visible widgets only, so callers name
+    // a neighbour instead of an index; hidden widgets keep their place.
+    async reorder(id, beforeId) {
+      return mutate(items => {
+        const from = items.findIndex(i => i.id === id);
+        if (from < 0 || beforeId === id) return null;
+        const rest = items.filter(i => i.id !== id);
+        let to = beforeId ? rest.findIndex(i => i.id === beforeId) : rest.length;
+        if (to < 0) to = rest.length;
+        rest.splice(to, 0, items[from]);
+        if (rest.every((i, idx) => i.id === items[idx].id)) return null;
+        return rest;
+      });
     },
 
     // delta -1 moves toward the top, +1 toward the bottom; clamped.

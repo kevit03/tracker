@@ -67,7 +67,13 @@ async function run() {
     const W = fresh();
     let items = await W.load();
     assert.strictEqual(items.length, 6);
-    assert.strictEqual(chrome.storage.local.store[W.STORAGE_KEY], undefined, 'load alone does not write');
+    assert.ok(chrome.storage.local.store[W.STORAGE_KEY], 'first load persists the default layout');
+    assert.deepStrictEqual(items.map(i => i.id), ['timer-default', 'timeStats-default', 'goal-default', 'details-default', 'summary-default', 'activity-default'], 'default ids are fixed');
+
+    // Regression: on a fresh install, an edit keyed by a default id must land.
+    items = await W.reorder('goal-default', null);
+    assert.strictEqual(items[items.length - 1].id, 'goal-default', 'reorder finds a default widget on a fresh install');
+    items = await W.reorder('goal-default', 'details-default');
 
     items = await W.add('streak', { metricId: 'leetcode' });
     assert.strictEqual(items.length, 7);
@@ -105,6 +111,27 @@ async function run() {
     items = await W.update(actId, { options: { days: 99 } });
     assert.strictEqual(items.find(i => i.id === actId).options.days, 30, 'an invalid update falls back to the default, not the old value');
     assert.strictEqual(items.find(i => i.id === actId).options.metricId, 'jobs', 'untouched options survive an update');
+
+    // Drag and drop: drop before a neighbour, or at the end.
+    const ids = () => items.map(i => i.id);
+    const [a, b, c] = ids();
+    items = await W.reorder(a, c);
+    assert.deepStrictEqual(ids().slice(0, 3), [b, a, c], 'dropped before c');
+    items = await W.reorder(a, null);
+    assert.strictEqual(ids()[ids().length - 1], a, 'null drops at the end');
+    items = await W.reorder(a, b);
+    assert.strictEqual(ids()[0], a, 'dropped before the first item lands first');
+    const snapshot = ids();
+    items = await W.reorder(a, a);
+    assert.deepStrictEqual(ids(), snapshot, 'dropping onto itself changes nothing');
+    items = await W.reorder(a, 'missing');
+    assert.strictEqual(ids()[ids().length - 1], a, 'an unknown neighbour means the end');
+    items = await W.reorder('missing', b);
+    assert.strictEqual(ids().length, 8);
+    items = await W.reorder(b, a);
+    const posA = ids().indexOf(a);
+    assert.strictEqual(ids()[posA - 1], b, 'b now sits immediately before a');
+    assert.strictEqual(posA, ids().length - 1, 'a is still last');
 
     items = await W.remove(streakId);
     assert.strictEqual(items.length, 7);

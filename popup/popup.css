@@ -1342,6 +1342,8 @@ body.pt-dark .modal-content.glass-card {
   position: absolute;
   top: -8px;
   right: -4px;
+  display: flex;
+  gap: 4px;
   opacity: 0;
   transition: opacity 0.12s;
 }
@@ -1351,7 +1353,8 @@ body.pt-dark .modal-content.glass-card {
   opacity: 1;
 }
 
-.widget-edit-btn {
+.widget-edit-btn,
+.widget-drag-handle {
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -1370,11 +1373,49 @@ body.pt-dark .modal-content.glass-card {
   border-color: var(--blue);
 }
 
+/* Drag to reorder: the grip lifts the widget, its neighbours slide apart. */
+.widget-drag-handle {
+  cursor: grab;
+  touch-action: none;
+}
+
+.widget-drag-handle:hover {
+  color: var(--text-main);
+}
+
+.widget-drag-handle:active,
+.widget.dragging .widget-drag-handle {
+  cursor: grabbing;
+}
+
+.widgets-host.drag-active .widget:not(.dragging) {
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.widget.dragging {
+  z-index: 5;
+  opacity: 0.96;
+}
+
+.widget.dragging .widget-tools {
+  opacity: 1;
+}
+
+.widget.dragging .widget-body {
+  border-radius: var(--radius);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.12);
+  background: var(--bg-page);
+}
+
+.widgets-host.drag-active {
+  user-select: none;
+}
+
 /* Header-style widgets: the gear shares the header line with the collapse
    arrow, so the toggle leaves room for it and the gear drops to that line. */
 .widget-activity .activity-toggle,
 .widget-details .details-toggle {
-  padding-right: 28px;
+  padding-right: 54px;
 }
 
 .widget-activity .widget-tools,
@@ -1430,46 +1471,72 @@ body.pt-dark .modal-content.glass-card {
 .widget-picker {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 300px;
+  max-height: 440px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
 
+/* One line per widget, hairline dividers, nothing else */
 .widget-picker-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-card);
+  gap: 12px;
+  padding: 28px 4px;
+  border-bottom: 1px solid var(--border);
 }
 
-.widget-picker-text {
-  min-width: 0;
+.widget-picker-row:last-child {
+  border-bottom: none;
 }
 
 .widget-picker-name {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 500;
   color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.widget-picker-desc {
-  font-size: 11px;
-  color: var(--text-sec);
-  line-height: 1.35;
-  margin-top: 1px;
-}
-
-.widget-picker-row .btn-sm-primary {
+/* Add: a dashed pill in the token idiom; Added: a quiet check, no border */
+.widget-add-btn {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  border: 1px dashed var(--text-muted);
+  background: transparent;
+  color: var(--text-sec);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
-.widget-picker-row .btn-sm-primary:disabled {
-  opacity: 0.55;
+.widget-add-btn:hover:not(:disabled) {
+  border-style: solid;
+  border-color: var(--blue);
+  background: var(--blue-light);
+  color: var(--blue-text);
+}
+
+.widget-add-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.widget-add-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.widget-add-btn.added {
+  border-color: transparent;
+  color: var(--text-muted);
   cursor: default;
 }
 
@@ -1793,6 +1860,7 @@ body.pt-dark .token-popover {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .widgets-host.drag-active .widget:not(.dragging) { transition: none; }
   .token-flash { animation: none; }
   .token-popover { animation: none; }
   .hover-btn-text,

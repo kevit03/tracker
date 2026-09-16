@@ -844,6 +844,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const widgetsHost = el('widgets-host');
   const widgetParts = el('widget-parts');
+  const GRIP_SVG = '<svg viewBox="0 0 12 12" width="12" height="12" fill="currentColor" aria-hidden="true" focusable="false"><circle cx="4" cy="2.5" r="1.1"/><circle cx="8" cy="2.5" r="1.1"/><circle cx="4" cy="6" r="1.1"/><circle cx="8" cy="6" r="1.1"/><circle cx="4" cy="9.5" r="1.1"/><circle cx="8" cy="9.5" r="1.1"/></svg>';
   const GEAR_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
 
   function metricFor(item) {
@@ -868,6 +869,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     wrap.dataset.widgetType = item.type;
     const tools = document.createElement('div');
     tools.className = 'widget-tools';
+    const grip = document.createElement('button');
+    grip.type = 'button';
+    grip.className = 'widget-drag-handle';
+    grip.title = 'Drag to reorder';
+    grip.setAttribute('aria-label', 'Drag to reorder the ' + WidgetLayout.TYPES[item.type].name + ' widget');
+    grip.innerHTML = GRIP_SVG;
+    tools.appendChild(grip);
     const edit = document.createElement('button');
     edit.type = 'button';
     edit.className = 'widget-edit-btn';
@@ -1144,27 +1152,158 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (item) openMetricSettings(metricFor(item).id);
   });
 
+  /* Drag to reorder.
+     Pointer events on the grip, not HTML5 drag and drop: the native version
+     cannot be styled, misbehaves in extension popups, and has no touch
+     story. The lifted widget follows the pointer; the others slide out of
+     its way. On release the order is committed through WidgetLayout.reorder
+     by naming the neighbour it lands in front of, so hidden widgets keep
+     their place in the layout. */
+  const WIDGET_GAP = 10;
+  let drag = null;
+
+  function dragMeasure() {
+    const items = Array.from(widgetsHost.children);
+    return {
+      items,
+      tops: items.map(el => el.getBoundingClientRect().top + window.scrollY),
+      heights: items.map(el => el.getBoundingClientRect().height)
+    };
+  }
+
+  function dragTargetIndex(d, centerY) {
+    let to = 0;
+    d.items.forEach((el, i) => {
+      if (i === d.from) return;
+      if (centerY > d.tops[i] + d.heights[i] / 2) to++;
+    });
+    return to;
+  }
+
+  function dragUpdate(clientY) {
+    if (!drag) return;
+    const d = drag;
+    d.lastClientY = clientY;
+    const pageY = clientY + window.scrollY;
+    const dy = pageY - d.startPageY;
+    d.wrap.style.transform = 'translateY(' + dy + 'px)';
+    const center = d.tops[d.from] + d.heights[d.from] / 2 + dy;
+    d.to = dragTargetIndex(d, center);
+    const slide = d.heights[d.from] + WIDGET_GAP;
+    d.items.forEach((el, i) => {
+      if (i === d.from) return;
+      let shift = 0;
+      if (i < d.from && i >= d.to) shift = slide;
+      else if (i > d.from && i <= d.to) shift = -slide;
+      el.style.transform = shift ? 'translateY(' + shift + 'px)' : '';
+    });
+    // Nudge the popup's scroll when the pointer nears an edge so long layouts
+    // can be reordered end to end. Runs only while a drag is live.
+    const edge = 36;
+    const speed = clientY < edge ? -6 : (clientY > window.innerHeight - edge ? 6 : 0);
+    if (speed && !d.scrollRaf) {
+      const step = () => {
+        if (!drag || drag !== d) return;
+        const before = window.scrollY;
+        window.scrollBy(0, speed);
+        if (window.scrollY !== before) dragUpdate(d.lastClientY);
+        d.scrollRaf = requestAnimationFrame(step);
+      };
+      d.scrollRaf = requestAnimationFrame(step);
+    } else if (!speed && d.scrollRaf) {
+      cancelAnimationFrame(d.scrollRaf);
+      d.scrollRaf = 0;
+    }
+  }
+
+  function dragEnd(commit) {
+    if (!drag) return;
+    const d = drag;
+    drag = null;
+    if (d.scrollRaf) cancelAnimationFrame(d.scrollRaf);
+    d.items.forEach(el => { el.style.transform = ''; });
+    d.wrap.classList.remove('dragging');
+    widgetsHost.classList.remove('drag-active');
+    try { d.handle.releasePointerCapture(d.pointerId); } catch (e) { /* already released */ }
+    if (!commit || d.to === d.from) return;
+    const rest = d.items.filter(el => el !== d.wrap);
+    const before = rest[d.to];
+    applyLayout(WidgetLayout.reorder(d.id, before ? before.dataset.widgetId : null));
+  }
+
+  widgetsHost.addEventListener('pointerdown', (e) => {
+    const handle = e.target.closest('.widget-drag-handle');
+    if (!handle || e.button !== 0) return;
+    const wrap = handle.closest('.widget');
+    if (!wrap) return;
+    e.preventDefault();
+    const m = dragMeasure();
+    const from = m.items.indexOf(wrap);
+    drag = {
+      pointerId: e.pointerId,
+      handle,
+      wrap,
+      id: wrap.dataset.widgetId,
+      items: m.items,
+      tops: m.tops,
+      heights: m.heights,
+      from,
+      to: from,
+      startPageY: e.clientY + window.scrollY,
+      lastClientY: e.clientY,
+      scrollRaf: 0
+    };
+    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
+    wrap.classList.add('dragging');
+    widgetsHost.classList.add('drag-active');
+  });
+
+  widgetsHost.addEventListener('pointermove', (e) => {
+    if (drag && e.pointerId === drag.pointerId) dragUpdate(e.clientY);
+  });
+  widgetsHost.addEventListener('pointerup', (e) => {
+    if (drag && e.pointerId === drag.pointerId) dragEnd(true);
+  });
+  widgetsHost.addEventListener('pointercancel', () => dragEnd(false));
+  document.addEventListener('keydown', (e) => {
+    if (drag && e.key === 'Escape') { e.preventDefault(); dragEnd(false); }
+  }, true);
+
+  // The grip is for pointers; keyboard users reorder from the gear's
+  // Position token. Arrow keys on a focused grip do the same one step at a time.
+  widgetsHost.addEventListener('keydown', (e) => {
+    const handle = e.target.closest && e.target.closest('.widget-drag-handle');
+    if (!handle) return;
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    const wrap = handle.closest('.widget');
+    const id = wrap && wrap.dataset.widgetId;
+    if (!id) return;
+    applyLayout(WidgetLayout.move(id, e.key === 'ArrowUp' ? -1 : 1)).then(() => {
+      const again = widgetsHost.querySelector('[data-widget-id="' + id + '"] .widget-drag-handle');
+      if (again) again.focus();
+    });
+  });
+
   /* Add widget picker */
   function renderWidgetPicker() {
     const list = el('add-widget-list');
     list.innerHTML = '';
     WidgetLayout.availableTypes(widgetItems).forEach(t => {
+      // Name only; the description lives in the tooltip so the list stays lean.
       const row = document.createElement('div');
       row.className = 'widget-picker-row';
+      row.title = t.description;
       const text = document.createElement('div');
-      text.className = 'widget-picker-text';
-      const name = document.createElement('div');
-      name.className = 'widget-picker-name';
-      name.textContent = t.name;
-      const desc = document.createElement('div');
-      desc.className = 'widget-picker-desc';
-      desc.textContent = t.description;
-      text.appendChild(name);
-      text.appendChild(desc);
+      text.className = 'widget-picker-name';
+      text.textContent = t.name;
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'btn-sm-primary';
-      btn.textContent = t.added ? 'Added' : 'Add';
+      btn.className = 'widget-add-btn' + (t.added ? ' added' : '');
+      btn.innerHTML = t.added
+        ? '<svg viewBox="0 0 12 12" width="11" height="11" fill="none" aria-hidden="true" focusable="false"><path d="M2.5 6.2l2.2 2.3L9.5 3.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Added</span>'
+        : '<svg viewBox="0 0 12 12" width="11" height="11" fill="none" aria-hidden="true" focusable="false"><path d="M6 2.5v7M2.5 6h7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span>Add</span>';
+      btn.setAttribute('aria-label', (t.added ? 'Already added: ' : 'Add ') + t.name);
       btn.disabled = t.added;
       btn.addEventListener('click', async () => {
         const ok = await applyLayout(WidgetLayout.add(t.type, { metricId: WidgetLayout.ACTIVE }), t.name + ' widget added.');
