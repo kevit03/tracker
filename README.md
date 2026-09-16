@@ -1,3 +1,5 @@
+<p align="center"><img src="icons/icon128.png" width="96" alt="Locked In padlock mark"></p>
+
 # Locked In Tracker
 
 A Chrome extension that counts applications sent and problems solved, shows every day's numbers on your calendar, and logs most of it for you automatically. 
@@ -35,7 +37,7 @@ The counter card at the top is fixed: big number, `+1`, `-1`. Everything under i
 | Daily Goal | Progress bar toward the tracker's goal; select the number to change it |
 | Week / Month / Total | Rolling counts |
 | Activity Chart | 7, 14, or 30 days of bars with total, average, active days, best day |
-| Streak | Current and longest run of consecutive days |
+| Streak | Current and longest run of days the daily goal was met |
 | Solve Timer | Countdown for a problem (LeetCode tracker only) |
 | Solve Time Stats | Today, all time, average, fastest |
 | Add Details | Company, role, and notes for the next entry |
