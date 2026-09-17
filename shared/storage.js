@@ -62,7 +62,29 @@ const TrackerStorage = (() => {
     }
   ];
 
-  // Write queue mutex to serialize concurrent writes to chrome.storage.local
+  // The calorie tracker is a built-in metric like jobs/leetcode (fixed id,
+  // undeletable), but unlike them it is NOT seeded for every install — most
+  // users never touch it, and every test/caller elsewhere that counts "the 2
+  // defaults" would break if getMetrics() started returning a third for free.
+  // Instead it is created on demand, the first time the calorie chat or
+  // budget widget is added (see ensureCalorieMetric below), same fixed id
+  // every time so a second call is a no-op.
+  const CALORIE_METRIC = {
+    id: 'calories',
+    name: 'Calories',
+    color: '#e8710a',
+    icon: 'flame',
+    unit: 'kcal',
+    dailyGoal: 2000,
+    // The daily "goal" here is a ceiling, not a floor: staying AT OR UNDER it
+    // is the win. goalMetOn/computeStreak take an `under` flag for this
+    // reason instead of assuming ">= goal" everywhere.
+    isBudget: true,
+    isDefault: true,
+    createdAt: '2026-09-01T00:00:00.000Z'
+  };
+
+  // Write queue mutex to serialize concurrent writes to chrome.storage.sync
   let writeLock = Promise.resolve();
 
   function enqueueWrite(fn) {
@@ -85,7 +107,7 @@ const TrackerStorage = (() => {
 
   // The mutex above only serializes writers inside a single JS context, and the
   // popup and the content script each load their own copy of this module against
-  // one shared chrome.storage.local. chrome.storage has no compare-and-swap, so
+  // one shared chrome.storage.sync. chrome.storage has no compare-and-swap, so
   // a read-modify-write here can still be clobbered by the other context.
   // Re-read after every write and re-apply the mutation when that happens.
   const MAX_WRITE_ATTEMPTS = 5;
@@ -150,31 +172,41 @@ const TrackerStorage = (() => {
   }
 
   function defaultGoalFor(metricId) {
-    return metricId === 'jobs' ? 5 : (metricId === 'leetcode' ? 2 : 1);
+    if (metricId === 'jobs') return 5;
+    if (metricId === 'leetcode') return 2;
+    if (metricId === 'calories') return 2000;
+    return 1;
   }
 
   // A streak day is a day the DAILY GOAL was met, not merely a day with an
   // entry. Logging one application against a goal of five keeps the count
   // moving but does not extend the streak.
-  function goalMetOn(dailyMap, dateStr, metricId, goal) {
-    return (((dailyMap || {})[dateStr] || {})[metricId] || 0) >= Math.max(1, goal || 1);
+  //
+  // `under` flips the comparison for budget-style trackers (calories): the
+  // day must have a logged total AND that total must be at or below the
+  // goal. A day with no entries at all does not count as "under budget" —
+  // otherwise simply not logging would trivially extend the streak.
+  function goalMetOn(dailyMap, dateStr, metricId, goal, under) {
+    const value = ((dailyMap || {})[dateStr] || {})[metricId];
+    if (under) return value !== undefined && value <= Math.max(0, goal || 0);
+    return (value || 0) >= Math.max(1, goal || 1);
   }
 
   // Consecutive goal-met days ending today, or ending yesterday when today's
   // goal is still open, so a streak is not shown as broken before the day is.
-  function computeCurrentStreak(dailyMap, metricId, goal, todayStr) {
+  function computeCurrentStreak(dailyMap, metricId, goal, todayStr, under) {
     let check = todayStr || getLocalDateStr();
-    if (!goalMetOn(dailyMap, check, metricId, goal)) check = addDays(check, -1);
+    if (!goalMetOn(dailyMap, check, metricId, goal, under)) check = addDays(check, -1);
     let streak = 0;
-    while (goalMetOn(dailyMap, check, metricId, goal)) {
+    while (goalMetOn(dailyMap, check, metricId, goal, under)) {
       streak++;
       check = addDays(check, -1);
     }
     return streak;
   }
 
-  function computeLongestStreak(dailyMap, metricId, goal) {
-    const dates = Object.keys(dailyMap || {}).filter(d => goalMetOn(dailyMap, d, metricId, goal)).sort();
+  function computeLongestStreak(dailyMap, metricId, goal, under) {
+    const dates = Object.keys(dailyMap || {}).filter(d => goalMetOn(dailyMap, d, metricId, goal, under)).sort();
     let best = 0;
     let run = 0;
     let prev = null;
@@ -289,12 +321,23 @@ const TrackerStorage = (() => {
     return chunks;
   }
 
+  // Once real chrome.storage.sync and chrome.storage.local both exist, sync
+  // is the primary target and local is available as an overflow bucket. In
+  // any other environment (a bare mock, or a sync-less Chrome build already
+  // falling back to local through getStorageArea) there is nothing to
+  // overflow into, so the chunks just live wherever getStorageArea() points.
+  function hasRealSyncAndLocal() {
+    return typeof chrome !== 'undefined' && chrome.storage && !!chrome.storage.sync && !!chrome.storage.local;
+  }
+
+  const LOGS_OVERFLOW_KEY = 'logs_overflow';
+
   // Read path also accepts the old unchunked 'logs' array, so a value written
   // by a pre-sync build (or poked directly in a test) is never mistaken for
   // empty storage: it is only ever missing once real chunks exist.
-  function readLogsRaw() {
-    return migrateLogsIfNeeded().then(() => new Promise(resolve => {
-      getStorageArea().get([LOGS_META_KEY, STORAGE_KEYS.LOGS], metaResult => {
+  function readChunked(area) {
+    return new Promise(resolve => {
+      area.get([LOGS_META_KEY, STORAGE_KEYS.LOGS], metaResult => {
         const meta = metaResult && metaResult[LOGS_META_KEY];
         const count = meta && typeof meta.count === 'number' && meta.count >= 0 ? meta.count : null;
         if (count === null) {
@@ -307,7 +350,7 @@ const TrackerStorage = (() => {
         }
         const keys = [];
         for (let i = 0; i < count; i++) keys.push(logsChunkKey(i));
-        getStorageArea().get(keys, chunkResult => {
+        area.get(keys, chunkResult => {
           let logs = [];
           for (let i = 0; i < count; i++) {
             const chunk = chunkResult[logsChunkKey(i)];
@@ -316,28 +359,69 @@ const TrackerStorage = (() => {
           resolve(logs);
         });
       });
-    }));
+    });
   }
 
-  function writeLogsRaw(logs) {
-    const safeLogs = Array.isArray(logs) ? logs : [];
+  // Writes safeLogs, chunked, into area. Resolves false (instead of
+  // rejecting) when the browser reports a quota error, so the caller can fall
+  // back instead of losing the write.
+  function writeChunked(area, safeLogs) {
     const chunks = chunkLogs(safeLogs);
     return new Promise(resolve => {
-      getStorageArea().get([LOGS_META_KEY], metaResult => {
+      area.get([LOGS_META_KEY], metaResult => {
         const prevMeta = metaResult && metaResult[LOGS_META_KEY];
         const prevCount = prevMeta && typeof prevMeta.count === 'number' ? prevMeta.count : 0;
         const items = { [LOGS_META_KEY]: { count: chunks.length } };
         chunks.forEach((chunk, i) => { items[logsChunkKey(i)] = chunk; });
-        getStorageArea().set(items, () => {
+        area.set(items, () => {
+          const failed = typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.lastError;
+          if (failed) { resolve(false); return; }
           if (prevCount > chunks.length) {
             const stale = [];
             for (let i = chunks.length; i < prevCount; i++) stale.push(logsChunkKey(i));
-            getStorageArea().remove(stale, () => resolve());
+            area.remove(stale, () => resolve(true));
           } else {
-            resolve();
+            resolve(true);
           }
         });
       });
+    });
+  }
+
+  // chrome.storage.sync's 100KB total quota is shared by every device signed
+  // into the account, so it fills the same way everywhere: once it does, the
+  // full array (not just the new entry) is kept in chrome.storage.local under
+  // LOGS_OVERFLOW_KEY so nothing this device wrote is ever lost, even though
+  // it stops reaching other devices from that point. A device with no
+  // overflow yet still reads straight from sync, which is the up-to-date
+  // shared picture; a later write that fits again (history trimmed, or more
+  // quota freed up) clears the overflow, since sync is once more complete.
+  function readLogsRaw() {
+    return migrateLogsIfNeeded().then(() => {
+      if (!hasRealSyncAndLocal()) return readChunked(getStorageArea());
+      return new Promise(resolve => chrome.storage.local.get([LOGS_OVERFLOW_KEY], r => {
+        resolve(Array.isArray(r[LOGS_OVERFLOW_KEY]) ? r[LOGS_OVERFLOW_KEY] : null);
+      })).then(overflowLogs => {
+        // Every write while overflowing rewrites the FULL array into
+        // overflow, so once it exists it is already the complete picture for
+        // this device; re-merging the (now stale, frozen) sync snapshot back
+        // in would resurrect anything deleted since overflow started.
+        if (overflowLogs !== null) return overflowLogs;
+        return readChunked(chrome.storage.sync);
+      });
+    });
+  }
+
+  function writeLogsRaw(logs) {
+    const safeLogs = Array.isArray(logs) ? logs : [];
+    if (!hasRealSyncAndLocal()) {
+      return writeChunked(getStorageArea(), safeLogs).then(() => {});
+    }
+    return writeChunked(chrome.storage.sync, safeLogs).then(ok => {
+      if (ok) {
+        return new Promise(resolve => chrome.storage.local.remove([LOGS_OVERFLOW_KEY], resolve));
+      }
+      return new Promise(resolve => chrome.storage.local.set({ [LOGS_OVERFLOW_KEY]: safeLogs }, resolve));
     });
   }
 
@@ -345,10 +429,13 @@ const TrackerStorage = (() => {
   async function migrateLogsIfNeeded() {
     if (logsMigrated) return;
     logsMigrated = true;
-    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.sync || !chrome.storage.local) return;
+    if (!hasRealSyncAndLocal()) return;
     try {
       const syncMeta = await new Promise(r => chrome.storage.sync.get([LOGS_META_KEY, STORAGE_KEYS.LOGS], r));
-      if (syncMeta && (syncMeta[LOGS_META_KEY] !== undefined || syncMeta[STORAGE_KEYS.LOGS] !== undefined)) return;
+      const overflowResult = await new Promise(r => chrome.storage.local.get([LOGS_OVERFLOW_KEY], r));
+      const alreadyMigrated = (syncMeta && (syncMeta[LOGS_META_KEY] !== undefined || syncMeta[STORAGE_KEYS.LOGS] !== undefined)) ||
+        (overflowResult && Array.isArray(overflowResult[LOGS_OVERFLOW_KEY]));
+      if (alreadyMigrated) return;
       const localResult = await new Promise(r => chrome.storage.local.get([STORAGE_KEYS.LOGS], r));
       const localLogs = safeGetLogs(localResult);
       if (localLogs.length > 0) await writeLogsRaw(localLogs);
@@ -428,6 +515,25 @@ const TrackerStorage = (() => {
           const allMetrics = current.length === 0 ? [...DEFAULT_METRICS] : current;
           const updated = allMetrics.map(m => (m && m.id === metricId ? { ...m, dailyGoal: goal } : m));
           return { write: true, value: updated, verify: hasGoal, result: true };
+        });
+      });
+    },
+
+    // Creates the calorie tracker the first time it's needed (see
+    // CALORIE_METRIC above) and is a no-op on every later call. Returns the
+    // metric either way, so a widget can call this unconditionally on mount.
+    async ensureCalorieMetric() {
+      return enqueueWrite(async () => {
+        const hasIt = list => list.some(m => m && m.id === CALORIE_METRIC.id);
+        return mutateVerified(readMetricsRaw, writeMetricsRaw, current => {
+          const allMetrics = current.length === 0 ? [...DEFAULT_METRICS] : current;
+          if (hasIt(allMetrics)) return { write: false, result: CALORIE_METRIC };
+          return {
+            write: true,
+            value: allMetrics.concat([{ ...CALORIE_METRIC }]),
+            verify: hasIt,
+            result: CALORIE_METRIC
+          };
         });
       });
     },
@@ -759,10 +865,13 @@ const TrackerStorage = (() => {
       // for older callers.
       const streaks = {};
       const longestStreaks = {};
+      const weeklyAverages = {};
       metrics.forEach(m => {
         const goal = m.dailyGoal || defaultGoalFor(m.id);
-        streaks[m.id] = computeCurrentStreak(dailyMap, m.id, goal, todayStr);
-        longestStreaks[m.id] = computeLongestStreak(dailyMap, m.id, goal);
+        const under = !!m.isBudget;
+        streaks[m.id] = computeCurrentStreak(dailyMap, m.id, goal, todayStr, under);
+        longestStreaks[m.id] = computeLongestStreak(dailyMap, m.id, goal, under);
+        weeklyAverages[m.id] = parseFloat(((thisWeek[m.id] || 0) / 7).toFixed(1));
       });
       const currentStreak = streaks.jobs || 0;
 
@@ -777,6 +886,7 @@ const TrackerStorage = (() => {
         currentStreak,
         streaks,
         longestStreaks,
+        weeklyAverages,
         dailyMap
       };
     },
@@ -869,7 +979,7 @@ const TrackerStorage = (() => {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {
           if (area !== 'sync' && area !== 'local') return;
-          const logsTouched = Object.keys(changes).some(k => k === LOGS_META_KEY || k.indexOf('logs__c') === 0);
+          const logsTouched = Object.keys(changes).some(k => k === LOGS_META_KEY || k === LOGS_OVERFLOW_KEY || k.indexOf('logs__c') === 0);
           const hasOther = changes.logs || changes.metrics || changes.pt_auth_user || changes.pt_visible_metrics || changes.pt_theme || changes.pt_widgets;
           if (!logsTouched && !hasOther) return;
           if (!logsTouched) {

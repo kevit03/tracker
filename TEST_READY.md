@@ -8,8 +8,8 @@ The test architecture provides 100% deterministic, in-memory testing for all Chr
 
 ### Test Directory Structure (`test/`)
 
-- `test/mock_chrome.js`: In-memory implementation of Chrome extension APIs (`chrome.storage.local`, `chrome.storage.onChanged`, `chrome.identity`, `chrome.runtime`).
-- `test/storage.test.js`: Storage CRUD operations, LIFO tie-breaking for same-timestamp logs, daily streak calculations, DST/noon leap year date math, and storage corruption resilience.
+- `test/mock_chrome.js`: In-memory implementation of Chrome extension APIs (`chrome.storage.local`, `chrome.storage.sync` with real 8KB-per-item/100KB-total quota enforcement, `chrome.storage.onChanged`, `chrome.identity`, `chrome.runtime`).
+- `test/storage.test.js`: Storage CRUD operations, LIFO tie-breaking for same-timestamp logs, daily streak calculations, DST/noon leap year date math, storage corruption resilience, and cross-device sync overflow (logs past the `chrome.storage.sync` quota falling back to local without loss, then self-healing once trimmed).
 - `test/metrics.test.js`: Custom tracker creation, default metrics protection (`jobs`, `leetcode`), and historical log retention upon custom tracker deletion.
 - `test/auth.test.js`: Google OAuth2 identity flow, direct email sign-in, email normalization, session management, token eviction, and auth change events.
 - `test/isolation.test.js`: Multi-account data isolation (User A vs User B vs Anonymous), cross-account mutation prevention (delete/undo/tracker tampering rejection).

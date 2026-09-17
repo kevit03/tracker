@@ -327,6 +327,44 @@ async function run() {
     uninstallMockChrome();
   }
 
+  // 7. Cross-device sync: logs past chrome.storage.sync's 100KB quota fall
+  // back to a local overflow instead of being lost, and self-heal once the
+  // history shrinks back under quota.
+  {
+    const { mock, TrackerStorage } = getFreshStorage();
+
+    const bulkyNotes = 'x'.repeat(900);
+    const created = [];
+    for (let i = 0; i < 130; i++) {
+      created.push(await TrackerStorage.addLog({ metricId: 'jobs', company: 'Co ' + i, notes: bulkyNotes }));
+    }
+
+    assert.ok(mock.storage.local.store['logs_overflow'], 'History past quota must spill into a local overflow');
+    let logs = await TrackerStorage.getLogs();
+    assert.strictEqual(logs.length, 130, 'Every entry must still be readable once overflowing');
+
+    const stats = await TrackerStorage.getStats();
+    assert.strictEqual(stats.totalLogs, 130, 'Stats must see the full history through the overflow');
+
+    // Delete the oldest entries. A stale, frozen sync snapshot must never
+    // resurrect an id this device has since deleted.
+    for (const log of created.slice(0, 120)) {
+      await TrackerStorage.deleteLog(log.id);
+    }
+    logs = await TrackerStorage.getLogs();
+    assert.strictEqual(logs.length, 10, 'Deletes while overflowing must stick, not be undone by stale sync data');
+    assert.ok(!logs.some(l => created.slice(0, 120).some(c => c.id === l.id)), 'A deleted entry must never reappear');
+
+    // Back under quota: sync recovers and takes over again, overflow clears.
+    assert.strictEqual(mock.storage.local.store['logs_overflow'], undefined, 'Overflow must clear once history fits sync again');
+    assert.ok(mock.storage.sync.store['logs__meta'], 'Sync must hold the recovered history');
+
+    console.log('[PASS] Logs past the sync quota overflow to local without loss, and self-heal once trimmed');
+    delete global.TrackerAuth;
+    delete global.TrackerStorage;
+    uninstallMockChrome();
+  }
+
   console.log('--- test/storage.test.js COMPLETED SUCCESSFULLY ---\n');
 }
 

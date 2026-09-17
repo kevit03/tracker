@@ -92,7 +92,9 @@
   ],
   "host_permissions": [
     "https://calendar.google.com/*",
-    "https://www.googleapis.com/*"
+    "https://www.googleapis.com/*",
+    "https://trackapi.nutritionix.com/*",
+    "https://api.nal.usda.gov/*"
   ],
   "icons": {
     "16": "icons/icon16.png",

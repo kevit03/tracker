@@ -15,7 +15,7 @@ A Chrome extension that counts applications sent and problems solved, shows ever
                                 │
                      auto-tracker core: dedupe, toast
                                 │
-                        chrome.storage.local  ◄────  popup (+1 / -1, widgets)
+                        chrome.storage.sync   ◄────  popup (+1 / -1, widgets)
                                 │
                   Google Calendar overlay: day badges, quick add
 ```
@@ -42,7 +42,7 @@ The counter card at the top is fixed: big number, `+1`, `-1`. Everything under i
 | Solve Time Stats | Today, all time, average, fastest |
 | Add Details | Company, role, and notes for the next entry |
 
-The centered **+** adds a widget. Hover one and a grip and a gear appear: drag the grip to reorder, or open the gear to pin the widget to a tracker or let it follow the selected tab, set chart length, nudge its position, or remove it. Pin two Activity Charts to two trackers and compare. The layout persists in `chrome.storage.local['pt_widgets']`.
+The centered **+** adds a widget. Hover one and a grip and a gear appear: drag the grip to reorder, or open the gear to pin the widget to a tracker or let it follow the selected tab, set chart length, nudge its position, or remove it. Pin two Activity Charts to two trackers and compare. The layout persists in `chrome.storage.sync['pt_widgets']`, so it carries over to any other device signed into the same Chrome profile.
 
 On the LeetCode tab, **Space** starts and pauses the timer when nothing else has focus.
 
@@ -76,4 +76,6 @@ core.registerAdapter({
 
 ### Storage
 
-`shared/storage.js` wraps `chrome.storage.local` with a write queue and read-back verification, because the popup and the content script each hold their own copy of the module against one shared store and `chrome.storage` has no compare-and-swap. Logs carry the signed-in account so two Google accounts never see each other's data.
+`shared/storage.js` wraps `chrome.storage.sync` with a write queue and read-back verification, because the popup and the content script each hold their own copy of the module against one shared store and `chrome.storage` has no compare-and-swap. Logs carry the signed-in account so two Google accounts never see each other's data.
+
+Everything (logs, trackers, theme, widget layout, and the signed-in account) lives in `chrome.storage.sync`, so it follows you to any other device signed into the same Chrome profile, not just the machine you logged it on. `chrome.storage.sync` caps out at 100KB total and 8KB per item, so the logs array — the one value that can realistically grow past that — is split into size-bounded chunks (`logs__meta`, `logs__c0`, `logs__c1`, ...) instead of one big item. If a very long history ever fills the 100KB budget, new entries fall back to `chrome.storage.local['logs_overflow']` on that device rather than being lost; older history keeps syncing everywhere, and the overflow clears itself automatically once the history shrinks back under quota (e.g. after deleting old entries). An existing local-only install migrates its history into sync automatically the first time it runs after updating.

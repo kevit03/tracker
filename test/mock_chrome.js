@@ -212,17 +212,28 @@ function createMockChrome(initialStore = {}) {
   syncStorageArea.QUOTA_BYTES_PER_ITEM = 8192;
   const baseSyncSet = syncStorageArea.set.bind(syncStorageArea);
   syncStorageArea.set = function (items, callback) {
-    for (const [key, value] of Object.entries(items || {})) {
+    const incoming = items || {};
+    let projectedTotal = 0;
+    let overItem = null;
+    Object.keys(syncStorageArea.store).forEach(k => {
+      if (Object.prototype.hasOwnProperty.call(incoming, k)) return;
+      projectedTotal += k.length + JSON.stringify(syncStorageArea.store[k]).length;
+    });
+    Object.entries(incoming).forEach(([key, value]) => {
       const size = key.length + JSON.stringify(value === undefined ? null : value).length;
-      if (size > syncStorageArea.QUOTA_BYTES_PER_ITEM) {
-        const err = new Error('QUOTA_BYTES_PER_ITEM quota exceeded for key "' + key + '"');
-        if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.lastError = { message: err.message };
-        if (typeof callback === 'function') process.nextTick(() => {
-          callback();
-          if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.lastError = null;
-        });
-        return Promise.resolve();
-      }
+      projectedTotal += size;
+      if (size > syncStorageArea.QUOTA_BYTES_PER_ITEM) overItem = key;
+    });
+    if (overItem || projectedTotal > syncStorageArea.QUOTA_BYTES) {
+      const message = overItem
+        ? 'QUOTA_BYTES_PER_ITEM quota exceeded for key "' + overItem + '"'
+        : 'QUOTA_BYTES quota exceeded';
+      if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.lastError = { message };
+      if (typeof callback === 'function') process.nextTick(() => {
+        callback();
+        if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.lastError = null;
+      });
+      return Promise.resolve();
     }
     return baseSyncSet(items, callback);
   };

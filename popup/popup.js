@@ -652,23 +652,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (!note) return;
     if (timed.length === 0) {
-      note.textContent = 'No solve times recorded yet. Type a countdown, press Start, then log the problem to capture one.';
-    } else {
-      const lastSeconds = parseInt(timed[0].solveTimeSeconds, 10) || 0;
-      const diff = timeStats.avgSeconds - lastSeconds;
-      let trend;
-      if (timed.length < 2) {
-        trend = 'your first timed solve.';
-      } else if (diff > 0) {
-        trend = TrackerStorage.formatTimeHMS(diff) + ' faster than your average.';
-      } else if (diff < 0) {
-        trend = TrackerStorage.formatTimeHMS(-diff) + ' slower than your average.';
-      } else {
-        trend = 'exactly your average pace.';
-      }
-      note.textContent = 'Last timed solve ' + TrackerStorage.formatTimeHMS(lastSeconds) + ' — ' + trend
-        + ' Timed ' + timed.length + ' of ' + lcLogs.length + ' logged problems.';
+      note.classList.add('hidden');
+      return;
     }
+    const lastSeconds = parseInt(timed[0].solveTimeSeconds, 10) || 0;
+    const diff = timeStats.avgSeconds - lastSeconds;
+    let trend;
+    if (timed.length < 2) {
+      trend = 'your first timed solve.';
+    } else if (diff > 0) {
+      trend = TrackerStorage.formatTimeHMS(diff) + ' faster than your average.';
+    } else if (diff < 0) {
+      trend = TrackerStorage.formatTimeHMS(-diff) + ' slower than your average.';
+    } else {
+      trend = 'exactly your average pace.';
+    }
+    note.textContent = 'Last timed solve ' + TrackerStorage.formatTimeHMS(lastSeconds) + ' — ' + trend
+      + ' Timed ' + timed.length + ' of ' + lcLogs.length + ' logged problems.';
     note.classList.remove('hidden');
   }
 

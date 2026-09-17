@@ -19,7 +19,7 @@ async function run() {
     installMockChrome();
     const W = fresh();
     const types = Object.keys(W.TYPES);
-    assert.deepStrictEqual(types.sort(), ['activity', 'details', 'goal', 'streak', 'summary', 'timeStats', 'timer']);
+    assert.deepStrictEqual(types.sort(), ['activity', 'calorieChat', 'details', 'goal', 'streak', 'summary', 'timeStats', 'timer']);
     const items = W.defaultItems();
     assert.deepStrictEqual(items.map(i => i.type), ['timer', 'timeStats', 'goal', 'details', 'summary', 'activity'], 'default layout mirrors the original popup order');
     assert.ok(items.every(i => typeof i.id === 'string' && i.id.startsWith(i.type + '-')), 'every default item gets an id');
@@ -179,7 +179,7 @@ async function run() {
     assert.strictEqual(W.isVisible({ type: 'nope' }, 'jobs'), false);
 
     const avail = W.availableTypes(W.defaultItems());
-    assert.strictEqual(avail.length, 7);
+    assert.strictEqual(avail.length, 8);
     assert.strictEqual(avail.find(t => t.type === 'timer').added, true, 'a present singleton is marked added');
     assert.strictEqual(avail.find(t => t.type === 'goal').added, false, 'multi-instance types are always addable');
     assert.strictEqual(avail.find(t => t.type === 'streak').added, false);
