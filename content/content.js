@@ -1,12 +1,34 @@
 // Google Calendar Content Script — Locked In
 //
-// Paints a badge with each day's counts into Google Calendar's day cells and
-// offers a quick-add button per cell. Everything else (timers, charts, the
-// tracker list, sign-in) lives in the popup.
+// Shows each day's counts over Google Calendar, in a layer of our own that
+// never touches Calendar's DOM, with a quick-add button per day. Everything
+// else (timers, charts, the tracker list, sign-in) lives in the popup.
 (() => {
   let metrics = [];
   let stats = null;
   let currentTheme = 'light';
+  let observer = null;
+  let debounceTimer = null;
+  let tornDown = false;
+
+  // After the extension is reloaded or updated, this copy of the script keeps
+  // running on any Calendar tab that was already open, with no way back to
+  // storage: every chrome.* call throws "Extension context invalidated".
+  // Notice it, take our chrome off the page, and go quiet. A page refresh
+  // brings in the live copy.
+  function isContextError(err) {
+    let alive = false;
+    try { alive = typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id; } catch (e) { alive = false; }
+    return !alive || /Extension context invalidated/i.test(String(err && err.message || err));
+  }
+
+  function teardown() {
+    if (tornDown) return;
+    tornDown = true;
+    if (observer) observer.disconnect();
+    clearTimeout(debounceTimer);
+    document.querySelectorAll('#pt-layer, .pt-cell-overlay, .pt-quick-add-cell, #pt-day-modal').forEach(n => n.remove());
+  }
 
   // Theme is chosen in the popup and mirrored here for the day modal.
   function applyTheme(theme) {
@@ -58,7 +80,20 @@
   function parseDateFromElement(el) {
     if (!el) return null;
 
-    // 1. Check data-date (ISO format YYYY-MM-DD)
+    // 1. Calendar's own data-datekey is exact, so it wins. An aria-label is
+    // only consulted when the cell has no key: the first labelled child is
+    // often an event chip, and a multi-day event names a different day.
+    if (el.dataset && el.dataset.datekey) {
+      const d = dateFromDateKey(el.dataset.datekey);
+      if (d) return d;
+    }
+    const childWithKey = el.querySelector && el.querySelector('[data-datekey]');
+    if (childWithKey && childWithKey.dataset && childWithKey.dataset.datekey) {
+      const d = dateFromDateKey(childWithKey.dataset.datekey);
+      if (d) return d;
+    }
+
+    // 2. data-date (ISO YYYY-MM-DD)
     if (el.dataset && el.dataset.date && /^\d{4}-\d{2}-\d{2}$/.test(el.dataset.date)) {
       return el.dataset.date;
     }
@@ -67,7 +102,7 @@
       return childDate.dataset.date;
     }
 
-    // 2. Check aria-label on element or any child header/button
+    // 3. aria-label on the element or a child header or button
     const labelSources = [
       el.getAttribute && el.getAttribute('aria-label'),
       el.querySelector && el.querySelector('[aria-label]') && el.querySelector('[aria-label]').getAttribute('aria-label'),
@@ -98,17 +133,6 @@
           return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         }
       }
-    }
-
-    // 3. Check data-datekey with bitshift decode
-    if (el.dataset && el.dataset.datekey) {
-      const d = dateFromDateKey(el.dataset.datekey);
-      if (d) return d;
-    }
-    const childWithKey = el.querySelector && el.querySelector('[data-datekey]');
-    if (childWithKey && childWithKey.dataset && childWithKey.dataset.datekey) {
-      const d = dateFromDateKey(childWithKey.dataset.datekey);
-      if (d) return d;
     }
 
     return null;
@@ -152,194 +176,261 @@
   }
 
   async function doRefreshData() {
-    [metrics, stats] = await Promise.all([
-      TrackerStorage.getMetrics(),
-      TrackerStorage.getStats()
-    ]);
+    if (tornDown) return;
+    try {
+      [metrics, stats] = await Promise.all([
+        TrackerStorage.getMetrics(),
+        TrackerStorage.getStats()
+      ]);
+    } catch (err) {
+      if (isContextError(err)) teardown();
+      else console.warn('Locked In: could not read tracker data', err);
+      return;
+    }
     renderBadges();
   }
 
-  // Only this cell's own overlay and button count. A nested or sibling cell
-  // for the same date may hold its own (soon to be removed) copies, and those
-  // must never be mistaken for ours.
-  function ownChild(cell, className) {
-    const kids = cell.children || [];
-    for (let i = 0; i < kids.length; i++) {
-      if (kids[i].classList && kids[i].classList.contains(className)) return kids[i];
+  // ---------------------------------------------------------------
+  // 1. DAY BADGES
+  // ---------------------------------------------------------------
+  // Nothing is inserted into Google's grid. Badges live in one fixed layer of
+  // our own and are positioned from each day's rectangle, so Calendar's
+  // layout, and the event and task chips inside it, are never touched.
+  //
+  // Where a day is anchored:
+  //   Week and Day views  the column header, beside the date number
+  //   Month view          the day cell's date line, right-aligned
+  // Each day gets one .pt-day wrapper holding its count pills and a quick-add
+  // button that shows while that day is hovered.
+  const LAYER_ID = 'pt-layer';
+  const days = new Map();            // dateStr -> { node, anchor, kind }
+  let hoverTargets = new WeakMap();  // any element that decodes to a day -> dateStr
+  let hoveredDate = null;
+  let layoutRaf = 0;
+
+  function layerNode() {
+    let node = document.getElementById(LAYER_ID);
+    if (!node) {
+      node = document.createElement('div');
+      node.id = LAYER_ID;
+      document.body.appendChild(node);
     }
-    return null;
+    return node;
   }
 
-  function stripCell(cell) {
-    ['pt-cell-overlay', 'pt-quick-add-cell'].forEach(cls => {
-      const node = ownChild(cell, cls);
-      if (node) node.remove();
+  function isOutsideGrid(el) {
+    return !!(el.closest && el.closest('aside, nav, [role="rowheader"]'));
+  }
+
+  // One anchor per date. A column header wins when it carries a date (Week
+  // and Day views); otherwise the lowest day cell that decodes to the date,
+  // which in Week view is the timed column rather than the all-day strip.
+  function findAnchors() {
+    const found = {};
+    hoverTargets = new WeakMap();
+
+    document.querySelectorAll('[role="columnheader"]').forEach(h => {
+      if (isOutsideGrid(h)) return;
+      const d = parseDateFromElement(h);
+      if (!d) return;
+      hoverTargets.set(h, d);
+      if (!found[d]) found[d] = { anchor: h, kind: 'header' };
+    });
+
+    document.querySelectorAll('[role="gridcell"]').forEach(cell => {
+      if (isOutsideGrid(cell) || cell.closest('[role="columnheader"], header')) return;
+      if (cell.offsetHeight > 0 && cell.offsetHeight < 50) return;
+      const d = parseDateFromElement(cell);
+      if (!d) return;
+      hoverTargets.set(cell, d);
+      const cur = found[d];
+      if (cur && cur.kind === 'header') return;
+      const top = cell.getBoundingClientRect().top || 0;
+      if (!cur || top >= cur.top) found[d] = { anchor: cell, kind: 'cell', top };
+    });
+    return found;
+  }
+
+  // "1 Job Application", "2 Job Applications", "1 LeetCode": the tracker's
+  // own name, singular for one when it looks plural.
+  function metricLabel(m, count) {
+    let name = m.name || m.id;
+    if (count === 1 && /[^s]s$/i.test(name)) name = name.slice(0, -1);
+    return count + ' ' + name;
+  }
+
+  function dayStateKey(dateStr) {
+    const counts = stats.dailyMap[dateStr] || {};
+    return metrics.map(m => {
+      const count = counts[m.id] || 0;
+      if (count <= 0) return '';
+      return m.id + ':' + count + ':' + m.color + ':' + ((m.dailyGoal && count >= m.dailyGoal) ? 1 : 0);
+    }).filter(Boolean).join('|');
+  }
+
+  function buildPills(overlay, dateStr) {
+    overlay.textContent = '';
+    const counts = stats.dailyMap[dateStr] || {};
+    metrics.forEach(m => {
+      const count = counts[m.id] || 0;
+      if (count <= 0) return;
+      const isGoalMet = !!(m.dailyGoal && count >= m.dailyGoal);
+      const badge = document.createElement('div');
+      badge.className = 'pt-badge' + (isGoalMet ? ' pt-goal-met' : '');
+      badge.style.backgroundColor = isGoalMet ? m.color : m.color + '22';
+      badge.style.color = isGoalMet ? '#ffffff' : m.color;
+      const label = metricLabel(m, count);
+      badge.title = label + (isGoalMet ? ' (goal met)' : ' (goal ' + (m.dailyGoal || 1) + ')');
+      const dot = document.createElement('span');
+      dot.className = 'pt-badge-dot';
+      dot.style.backgroundColor = isGoalMet ? '#ffffff' : m.color;
+      // Count and name are separate so a narrow column can keep the count.
+      const text = document.createElement('span');
+      text.className = 'pt-badge-text';
+      const num = document.createElement('span');
+      num.className = 'pt-badge-count';
+      num.textContent = String(count);
+      const name = document.createElement('span');
+      name.className = 'pt-badge-name';
+      name.textContent = label.slice(String(count).length);
+      text.appendChild(num);
+      text.appendChild(name);
+      badge.appendChild(dot);
+      badge.appendChild(text);
+      overlay.appendChild(badge);
     });
   }
 
-  function ensureQuickAddButton(cell, dateStr) {
-    if (ownChild(cell, 'pt-quick-add-cell')) return;
+  function makeDayNode(dateStr) {
+    const node = document.createElement('div');
+    node.className = 'pt-day';
+    node.dataset.date = dateStr;
+    const overlay = document.createElement('div');
+    overlay.className = 'pt-cell-overlay';
     const addBtn = document.createElement('button');
     addBtn.className = 'pt-quick-add-cell';
+    addBtn.type = 'button';
     addBtn.title = 'Log entry for ' + dateStr;
+    addBtn.setAttribute('aria-label', 'Log entry for ' + dateStr);
     addBtn.textContent = '+';
     addBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
       openDayModal(dateStr, true);
     });
-    cell.appendChild(addBtn);
+    node.appendChild(overlay);
+    node.appendChild(addBtn);
+    return node;
   }
 
-  // ---------------------------------------------------------------
-  // 1. DAY CELL BADGES
-  // ---------------------------------------------------------------
-  // Badges sit directly under the cell's date header; a cell with no usable
-  // header gets a fixed offset.
-  function badgeTopOffset(cell) {
-    const headerEl = cell.querySelector('h2, [role="heading"], button, [class*="header"]') || cell.firstElementChild;
-    if (headerEl && headerEl.offsetHeight > 0 && headerEl.offsetHeight < 60) {
-      return Math.max(24, headerEl.offsetTop + headerEl.offsetHeight + 2);
+  function positionDay(entry) {
+    const r = entry.anchor.getBoundingClientRect();
+    const node = entry.node;
+    if (!r.width || !r.height) {
+      node.style.display = 'none';
+      return;
     }
-    return 26;
+    node.style.display = '';
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    if (entry.kind === 'header') {
+      // Stacked down the header's right edge: pills on the weekday line,
+      // the quick-add button beside the date number below it. The number is
+      // centred, so right-aligning a single row would run under it.
+      node.style.top = Math.round(r.top + 6) + 'px';
+      node.style.right = Math.round(viewportWidth - r.right + 8) + 'px';
+      node.style.height = Math.max(0, Math.round(r.height - 14)) + 'px';
+      node.style.maxWidth = Math.max(0, Math.round(r.width - 16)) + 'px';
+    } else {
+      // The right part of the date line only, clear of the centred number.
+      node.style.top = Math.round(r.top + 4) + 'px';
+      node.style.right = Math.round(viewportWidth - r.right + 4) + 'px';
+      node.style.height = '';
+      node.style.maxWidth = Math.max(0, Math.round(r.width * 0.6)) + 'px';
+    }
+    // Words when they fit, counts alone when any pill would be cut short.
+    node.classList.remove('pt-compact');
+    const texts = node.querySelectorAll('.pt-badge-text');
+    for (let i = 0; i < texts.length; i++) {
+      if (texts[i].scrollWidth > texts[i].clientWidth + 1) {
+        node.classList.add('pt-compact');
+        break;
+      }
+    }
   }
 
+  function layoutDays() {
+    layoutRaf = 0;
+    days.forEach(positionDay);
+  }
+
+  function scheduleLayout() {
+    if (tornDown || layoutRaf) return;
+    if (typeof requestAnimationFrame === 'function') {
+      layoutRaf = requestAnimationFrame(layoutDays);
+    } else {
+      layoutRaf = setTimeout(layoutDays, 0);
+    }
+  }
+
+  // Reconciles the layer against the days currently on screen: one node per
+  // date, pills rebuilt only when that day's counts changed.
   function renderBadges() {
-    if (!stats || !metrics.length) return;
+    if (tornDown || !stats || !stats.dailyMap || !metrics.length) return;
 
-    // Clean up any stray overlays or quick-add buttons in column headers or nav headers
-    document.querySelectorAll('.pt-cell-overlay, .pt-quick-add-cell').forEach(item => {
-      const parent = item.parentElement;
-      if (!parent ||
-          parent.getAttribute('role') === 'columnheader' ||
-          parent.closest('[role="columnheader"], [role="rowheader"], header, aside, nav') ||
-          (parent.offsetHeight > 0 && parent.offsetHeight < 50)) {
-        item.remove();
+    // Nodes an earlier version put inside Google's cells.
+    document.querySelectorAll('.pt-cell-overlay, .pt-quick-add-cell').forEach(n => {
+      if (!n.closest('#' + LAYER_ID)) n.remove();
+    });
+
+    const anchors = findAnchors();
+    const layer = layerNode();
+
+    days.forEach((entry, dateStr) => {
+      if (!anchors[dateStr]) {
+        entry.node.remove();
+        days.delete(dateStr);
       }
     });
 
-    // Target actual calendar day cells (gridcells with sufficient height)
-    const candidates = document.querySelectorAll('[role="gridcell"]');
-    const seenCells = new Set();
-
-    // One badge per date. Week and Day views give a date more than one
-    // gridcell (the all-day strip and the timed column, for instance), and
-    // an event chip's aria-label can attribute its date to yet another
-    // container. Keep the cell whose badge lands lowest on screen and strip
-    // the rest, so a day is never announced twice.
-    const hosts = {};
-    const losers = [];
-    candidates.forEach(cell => {
-      // Never render inside a column header, row header, sidebar, or header bar
-      if (cell.getAttribute('role') === 'columnheader' ||
-          cell.closest('[role="columnheader"], [role="rowheader"], header, aside, nav') ||
-          (cell.offsetHeight > 0 && cell.offsetHeight < 50)) {
-        return;
+    Object.keys(anchors).forEach(dateStr => {
+      const { anchor, kind } = anchors[dateStr];
+      let entry = days.get(dateStr);
+      if (!entry) {
+        entry = { node: makeDayNode(dateStr), anchor, kind, stateKey: null };
+        days.set(dateStr, entry);
+        layer.appendChild(entry.node);
       }
-
-      if (seenCells.has(cell)) return;
-      seenCells.add(cell);
-
-      const dateStr = parseDateFromElement(cell);
-      if (!dateStr) return;
-
-      const topOffset = badgeTopOffset(cell);
-      const rect = typeof cell.getBoundingClientRect === 'function' ? cell.getBoundingClientRect() : { top: 0 };
-      const badgeY = (rect.top || 0) + topOffset;
-      const current = hosts[dateStr];
-      if (!current) {
-        hosts[dateStr] = { cell, dateStr, topOffset, badgeY };
-        return;
+      entry.anchor = anchor;
+      entry.kind = kind;
+      entry.node.dataset.anchor = kind;
+      const stateKey = dayStateKey(dateStr);
+      if (stateKey !== entry.stateKey) {
+        buildPills(entry.node.firstElementChild, dateStr);
+        entry.stateKey = stateKey;
       }
-      if (badgeY >= current.badgeY) {
-        losers.push(current.cell);
-        hosts[dateStr] = { cell, dateStr, topOffset, badgeY };
-      } else {
-        losers.push(cell);
-      }
+      entry.node.classList.toggle('pt-hover', hoveredDate === dateStr);
+      positionDay(entry);
     });
+  }
 
-    losers.forEach(stripCell);
+  function setHoveredDate(dateStr) {
+    if (hoveredDate === dateStr) return;
+    hoveredDate = dateStr;
+    days.forEach((entry, d) => entry.node.classList.toggle('pt-hover', d === dateStr));
+  }
 
-    Object.keys(hosts).forEach(key => {
-      const { cell, dateStr, topOffset } = hosts[key];
-
-      const computedPos = window.getComputedStyle(cell).position;
-      if (computedPos === 'static') {
-        cell.style.position = 'relative';
-      }
-
-      const dateCounts = stats.dailyMap[dateStr] || {};
-      const stateKeyParts = [];
-      metrics.forEach(m => {
-        const count = dateCounts[m.id] || 0;
-        if (count > 0) {
-          const isGoalMet = m.dailyGoal && count >= m.dailyGoal;
-          stateKeyParts.push(m.id + ':' + count + ':' + m.color + ':' + (isGoalMet ? '1' : '0'));
-        }
-      });
-      const stateKey = stateKeyParts.join('|');
-
-      const existing = ownChild(cell, 'pt-cell-overlay');
-      if (existing && existing.dataset.stateKey === stateKey) {
-        existing.style.top = topOffset + 'px';
-        ensureQuickAddButton(cell, dateStr);
-        return;
-      }
-
-      if (existing) existing.remove();
-
-      // If no counts to display for this day, don't leave an empty overlay
-      if (stateKeyParts.length === 0) {
-        ensureQuickAddButton(cell, dateStr);
-        return;
-      }
-
-      const overlay = document.createElement('div');
-      overlay.className = 'pt-cell-overlay';
-      overlay.dataset.stateKey = stateKey;
-      overlay.style.top = topOffset + 'px';
-
-      metrics.forEach(m => {
-        const count = dateCounts[m.id] || 0;
-        if (count <= 0) return;
-
-        const isGoalMet = m.dailyGoal && count >= m.dailyGoal;
-        const badge = document.createElement('div');
-        badge.className = 'pt-badge' + (isGoalMet ? ' pt-goal-met' : '');
-        if (isGoalMet) {
-          badge.style.backgroundColor = m.color;
-          badge.style.color = '#ffffff';
-          badge.style.borderLeftColor = m.color;
-        } else {
-          badge.style.backgroundColor = m.color + '18';
-          badge.style.color = m.color;
-          badge.style.borderLeftColor = m.color;
-        }
-
-        const baseLabel = m.id === 'jobs'
-          ? (count === 1 ? '1 Job Applied' : count + ' Jobs Applied')
-          : (count + ' ' + m.name);
-        const label = isGoalMet ? baseLabel + ' (Goal Met)' : baseLabel;
-        badge.title = baseLabel + ' on ' + dateStr + ' (' + count + '/' + (m.dailyGoal || 1) + ' goal)';
-
-        const dot = document.createElement('span');
-        dot.className = 'pt-badge-dot';
-        dot.style.backgroundColor = isGoalMet ? '#ffffff' : m.color;
-
-        const text = document.createElement('span');
-        text.className = 'pt-badge-text';
-        text.textContent = label;
-
-        badge.appendChild(dot);
-        badge.appendChild(text);
-
-        overlay.appendChild(badge);
-      });
-
-      cell.appendChild(overlay);
-      ensureQuickAddButton(cell, dateStr);
-    });
+  function bindPointerTracking() {
+    document.addEventListener('mouseover', (e) => {
+      if (tornDown) return;
+      const t = e.target;
+      if (!t || !t.closest) return;
+      if (t.closest('#' + LAYER_ID)) return;               // our own pills or button
+      const host = t.closest('[role="gridcell"], [role="columnheader"]');
+      setHoveredDate(host ? (hoverTargets.get(host) || null) : null);
+    }, true);
+    document.addEventListener('mouseleave', () => setHoveredDate(null), true);
+    document.addEventListener('scroll', scheduleLayout, true);
+    window.addEventListener('resize', scheduleLayout);
   }
 
   // ---------------------------------------------------------------
@@ -349,7 +440,14 @@
     const old = document.getElementById('pt-day-modal');
     if (old) old.remove();
 
-    const logs = await TrackerStorage.getLogs({ startDate: dateStr, endDate: dateStr });
+    let logs;
+    try {
+      logs = await TrackerStorage.getLogs({ startDate: dateStr, endDate: dateStr });
+    } catch (err) {
+      if (isContextError(err)) teardown();
+      else console.warn('Locked In: could not read entries', err);
+      return;
+    }
     const mMap = metricsMap();
 
     const backdrop = document.createElement('div');
@@ -412,7 +510,15 @@
       const role = backdrop.querySelector('#pt-modal-role').value;
       const notes = backdrop.querySelector('#pt-modal-notes').value;
 
-      await TrackerStorage.addLog({ metricId, date: dateStr, count: 1, company, role, notes });
+      if (!metricId) return;
+      try {
+        await TrackerStorage.addLog({ metricId, date: dateStr, count: 1, company, role, notes });
+      } catch (err) {
+        backdrop.remove();
+        if (isContextError(err)) teardown();
+        else console.warn('Locked In: could not save the entry', err);
+        return;
+      }
       backdrop.remove();
       await refreshData();
     });
@@ -426,15 +532,12 @@
   // ---------------------------------------------------------------
   // 3. OBSERVER & INIT
   // ---------------------------------------------------------------
-  let debounceTimer = null;
-  let observer = null;
-
   function createObserver() {
     return new MutationObserver((mutations) => {
       const isOnlyInternal = mutations && mutations.length > 0 && mutations.every(mutation => {
         const target = mutation.target;
         if (target && target.closest && (
-          target.closest('.pt-cell-overlay') ||
+          target.closest('#' + LAYER_ID) ||
           target.closest('.pt-modal-backdrop')
         )) {
           return true;
@@ -450,9 +553,16 @@
   }
 
   async function init() {
-    const savedTheme = await TrackerStorage.getTheme();
+    let savedTheme = 'light';
+    try {
+      savedTheme = await TrackerStorage.getTheme();
+    } catch (err) {
+      if (isContextError(err)) return;
+    }
     applyTheme(savedTheme);
+    bindPointerTracking();
     await refreshData();
+    if (tornDown) return;
 
     observer = createObserver();
     observer.observe(document.body, { childList: true, subtree: true });
@@ -473,6 +583,8 @@
           TrackerStorage.getTheme().then(t => {
             applyTheme(t);
             refreshData();
+          }).catch(err => {
+            if (isContextError(err)) teardown();
           });
         }
         // Returning a promise from an onMessage listener is not supported in MV3.

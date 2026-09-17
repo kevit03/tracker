@@ -2,7 +2,7 @@
 //
 // The write mutex inside shared/storage.js only serializes writers within one
 // JS context. The popup and the Google Calendar content script each load their
-// own copy of the module against a single shared chrome.storage.local, so a
+// own copy of the module against a single shared chrome.storage.sync, so a
 // read-modify-write in one can clobber the other. These tests load two
 // independent module instances and widen the read/write window so the race is
 // actually provoked rather than merely asserted away.
@@ -14,14 +14,15 @@ const { installMockChrome, uninstallMockChrome } = require('./mock_chrome');
 function withLatency(area, getDelayMs, setDelayMs) {
   return {
     get(keys, cb) { setTimeout(() => area.get(keys, cb), getDelayMs); },
-    set(items, cb) { setTimeout(() => area.set(items, cb), setDelayMs); }
+    set(items, cb) { setTimeout(() => area.set(items, cb), setDelayMs); },
+    remove(keys, cb) { setTimeout(() => area.remove(keys, cb), setDelayMs); }
   };
 }
 
 function freshEnvironment(getDelayMs = 8, setDelayMs = 1) {
   const mock = installMockChrome();
-  const realArea = mock.storage.local;
-  mock.storage.local = withLatency(realArea, getDelayMs, setDelayMs);
+  const realArea = mock.storage.sync;
+  mock.storage.sync = withLatency(realArea, getDelayMs, setDelayMs);
   return { mock, realArea };
 }
 
@@ -59,7 +60,7 @@ async function run() {
   // 0. Control: the harness really does provoke lost updates
   {
     const { mock } = freshEnvironment();
-    const area = mock.storage.local;
+    const area = mock.storage.sync;
 
     await Promise.all(
       [1, 2, 3, 4, 5, 6].map(n => naiveAppend(area, { id: 'naive-' + n }))

@@ -2,9 +2,12 @@
 const TrackerAuth = (() => {
   const AUTH_KEY = 'pt_auth_user';
 
+  // chrome.storage.sync carries the signed-in account across devices; falls
+  // back to local (and then a localStorage shim) when sync is unavailable.
   function getStorageArea() {
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      return chrome.storage.local;
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      if (chrome.storage.sync) return chrome.storage.sync;
+      if (chrome.storage.local) return chrome.storage.local;
     }
     return {
       get: (keys, cb) => {
@@ -24,6 +27,27 @@ const TrackerAuth = (() => {
         if (cb) cb();
       }
     };
+  }
+
+  // A device upgrading from a local-only build still has its session sitting
+  // in chrome.storage.local; sync starts out empty until this runs once. Only
+  // copies when sync has nothing yet, so it never clobbers a session another
+  // device already synced in.
+  let authMigrated = false;
+  async function migrateFromLocalIfNeeded() {
+    if (authMigrated) return;
+    authMigrated = true;
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.sync || !chrome.storage.local) return;
+    try {
+      const syncResult = await new Promise(r => chrome.storage.sync.get([AUTH_KEY], r));
+      if (syncResult && syncResult[AUTH_KEY] !== undefined) return;
+      const localResult = await new Promise(r => chrome.storage.local.get([AUTH_KEY], r));
+      if (localResult && localResult[AUTH_KEY] !== undefined) {
+        await new Promise(r => chrome.storage.sync.set({ [AUTH_KEY]: localResult[AUTH_KEY] }, r));
+      }
+    } catch (e) {
+      // Best effort: sync simply starts signed out if this fails.
+    }
   }
 
   // Google's userinfo endpoint doubles as the token validity check: a 401
@@ -83,6 +107,7 @@ const TrackerAuth = (() => {
 
   return {
     async getCurrentUser() {
+      await migrateFromLocalIfNeeded();
       return new Promise(resolve => {
         getStorageArea().get([AUTH_KEY], result => {
           resolve(result[AUTH_KEY] || null);
@@ -214,7 +239,7 @@ const TrackerAuth = (() => {
     onAuthChanged(cb) {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {
-          if (area === 'local' && changes[AUTH_KEY]) {
+          if ((area === 'sync' || area === 'local') && changes[AUTH_KEY]) {
             cb(changes[AUTH_KEY].newValue || null);
           }
         });

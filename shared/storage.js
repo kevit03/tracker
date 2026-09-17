@@ -93,18 +93,32 @@ const TrackerStorage = (() => {
   // apply(currentValue, alreadyWrote) must return either
   //   { write: false, result }                       -> nothing to do
   //   { write: true, value, verify(readBack), result } -> write and confirm
-  async function mutateVerified(key, readValue, apply) {
+  // readCurrent/writeValue abstract over a plain single-key value (metrics)
+  // and the chunked logs array, so both share this retry loop.
+  async function mutateVerified(readCurrent, writeValue, apply) {
     let lastResult;
     let wrote = false;
     for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
-      const plan = apply(readValue(await readRaw(key)), wrote);
+      const plan = apply(await readCurrent(), wrote);
       lastResult = plan.result;
       if (!plan.write) return plan.result;
-      await writeRaw(key, plan.value);
+      await writeValue(plan.value);
       wrote = true;
-      if (plan.verify(readValue(await readRaw(key)))) return plan.result;
+      if (plan.verify(await readCurrent())) return plan.result;
     }
     return lastResult;
+  }
+
+  function readMetricsRaw() {
+    return migrateSimpleKeyIfNeeded(STORAGE_KEYS.METRICS).then(() => new Promise(resolve => {
+      getStorageArea().get([STORAGE_KEYS.METRICS], result => resolve(safeGetMetrics(result)));
+    }));
+  }
+
+  function writeMetricsRaw(metrics) {
+    return new Promise(resolve => {
+      getStorageArea().set({ [STORAGE_KEYS.METRICS]: metrics }, () => resolve());
+    });
   }
 
   function normalizeEmail(email) {
@@ -172,9 +186,15 @@ const TrackerStorage = (() => {
     return best;
   }
 
+  // chrome.storage.sync carries data across every device signed into the same
+  // Chrome profile; chrome.storage.local never leaves this machine. Falling
+  // back to local (and, failing that, to a localStorage-backed shim) keeps a
+  // sync-less Chrome build or a bare test mock working, just without the
+  // cross-device carry-over.
   function getStorageArea() {
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      return chrome.storage.local;
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      if (chrome.storage.sync) return chrome.storage.sync;
+      if (chrome.storage.local) return chrome.storage.local;
     }
     return {
       get: (keys, cb) => {
@@ -197,8 +217,35 @@ const TrackerStorage = (() => {
           });
         }
         if (cb) cb();
+      },
+      remove: (keys, cb) => {
+        if (typeof localStorage !== 'undefined') {
+          (Array.isArray(keys) ? keys : [keys]).forEach(k => localStorage.removeItem(k));
+        }
+        if (cb) cb();
       }
     };
+  }
+
+  // A device upgrading from a local-only build still has its history sitting
+  // in chrome.storage.local; sync starts out empty on every device until this
+  // runs once. Only copies when sync has nothing yet, so it can never clobber
+  // data another device already synced in.
+  const migratedKeys = {};
+  async function migrateSimpleKeyIfNeeded(key) {
+    if (migratedKeys[key]) return;
+    migratedKeys[key] = true;
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.sync || !chrome.storage.local) return;
+    try {
+      const syncResult = await new Promise(r => chrome.storage.sync.get([key], r));
+      if (syncResult && syncResult[key] !== undefined) return;
+      const localResult = await new Promise(r => chrome.storage.local.get([key], r));
+      if (localResult && localResult[key] !== undefined) {
+        await new Promise(r => chrome.storage.sync.set({ [key]: localResult[key] }, r));
+      }
+    } catch (e) {
+      // Best effort: sync simply starts empty if this fails.
+    }
   }
 
   function safeGetLogs(result) {
@@ -207,6 +254,107 @@ const TrackerStorage = (() => {
 
   function safeGetMetrics(result) {
     return Array.isArray(result && result[STORAGE_KEYS.METRICS]) ? result[STORAGE_KEYS.METRICS] : [];
+  }
+
+  // The logs array is the one value that can realistically outgrow sync's
+  // 8KB-per-item quota, so it is never stored as a single 'logs' item there.
+  // It is split across 'logs__c0', 'logs__c1', ... with 'logs__meta' naming
+  // how many chunks exist. LOGS_CHUNK_BUDGET leaves headroom under the 8192
+  // byte cap for JSON overhead and multi-byte characters.
+  const LOGS_META_KEY = 'logs__meta';
+  const LOGS_CHUNK_BUDGET = 6000;
+
+  function logsChunkKey(i) {
+    return 'logs__c' + i;
+  }
+
+  function byteSize(value) {
+    try { return JSON.stringify(value).length; } catch (e) { return Infinity; }
+  }
+
+  function chunkLogs(logs) {
+    if (logs.length === 0) return [];
+    const chunks = [];
+    let current = [];
+    logs.forEach(log => {
+      const trial = current.concat([log]);
+      if (current.length > 0 && byteSize(trial) > LOGS_CHUNK_BUDGET) {
+        chunks.push(current);
+        current = [log];
+      } else {
+        current = trial;
+      }
+    });
+    if (current.length > 0) chunks.push(current);
+    return chunks;
+  }
+
+  // Read path also accepts the old unchunked 'logs' array, so a value written
+  // by a pre-sync build (or poked directly in a test) is never mistaken for
+  // empty storage: it is only ever missing once real chunks exist.
+  function readLogsRaw() {
+    return migrateLogsIfNeeded().then(() => new Promise(resolve => {
+      getStorageArea().get([LOGS_META_KEY, STORAGE_KEYS.LOGS], metaResult => {
+        const meta = metaResult && metaResult[LOGS_META_KEY];
+        const count = meta && typeof meta.count === 'number' && meta.count >= 0 ? meta.count : null;
+        if (count === null) {
+          resolve(safeGetLogs(metaResult));
+          return;
+        }
+        if (count === 0) {
+          resolve([]);
+          return;
+        }
+        const keys = [];
+        for (let i = 0; i < count; i++) keys.push(logsChunkKey(i));
+        getStorageArea().get(keys, chunkResult => {
+          let logs = [];
+          for (let i = 0; i < count; i++) {
+            const chunk = chunkResult[logsChunkKey(i)];
+            if (Array.isArray(chunk)) logs = logs.concat(chunk);
+          }
+          resolve(logs);
+        });
+      });
+    }));
+  }
+
+  function writeLogsRaw(logs) {
+    const safeLogs = Array.isArray(logs) ? logs : [];
+    const chunks = chunkLogs(safeLogs);
+    return new Promise(resolve => {
+      getStorageArea().get([LOGS_META_KEY], metaResult => {
+        const prevMeta = metaResult && metaResult[LOGS_META_KEY];
+        const prevCount = prevMeta && typeof prevMeta.count === 'number' ? prevMeta.count : 0;
+        const items = { [LOGS_META_KEY]: { count: chunks.length } };
+        chunks.forEach((chunk, i) => { items[logsChunkKey(i)] = chunk; });
+        getStorageArea().set(items, () => {
+          if (prevCount > chunks.length) {
+            const stale = [];
+            for (let i = chunks.length; i < prevCount; i++) stale.push(logsChunkKey(i));
+            getStorageArea().remove(stale, () => resolve());
+          } else {
+            resolve();
+          }
+        });
+      });
+    });
+  }
+
+  let logsMigrated = false;
+  async function migrateLogsIfNeeded() {
+    if (logsMigrated) return;
+    logsMigrated = true;
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.sync || !chrome.storage.local) return;
+    try {
+      const syncMeta = await new Promise(r => chrome.storage.sync.get([LOGS_META_KEY, STORAGE_KEYS.LOGS], r));
+      if (syncMeta && (syncMeta[LOGS_META_KEY] !== undefined || syncMeta[STORAGE_KEYS.LOGS] !== undefined)) return;
+      const localResult = await new Promise(r => chrome.storage.local.get([STORAGE_KEYS.LOGS], r));
+      const localLogs = safeGetLogs(localResult);
+      if (localLogs.length > 0) await writeLogsRaw(localLogs);
+    } catch (e) {
+      // Best effort: sync simply starts empty if this fails.
+    }
   }
 
   // Seeding the defaults used to be an unlocked set() straight out of getMetrics,
@@ -243,26 +391,21 @@ const TrackerStorage = (() => {
 
     async getMetrics(userEmailOverride) {
       const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
-      return new Promise(resolve => {
-        getStorageArea().get([STORAGE_KEYS.METRICS], result => {
-          let allMetrics = safeGetMetrics(result);
-          if (allMetrics.length === 0) {
-            allMetrics = [...DEFAULT_METRICS];
-            seedDefaultMetrics();
-          }
-          const filtered = allMetrics.map(m => {
-            const dailyGoal = m.dailyGoal || defaultGoalFor(m.id);
-            return { ...m, dailyGoal };
-          }).filter(m => {
-            if (m.isDefault || m.id === 'jobs' || m.id === 'leetcode') return true;
-            const owner = normalizeEmail(m.userEmail);
-            if (!targetEmail) {
-              return !owner;
-            }
-            return owner === targetEmail;
-          });
-          resolve(filtered);
-        });
+      let allMetrics = await readMetricsRaw();
+      if (allMetrics.length === 0) {
+        allMetrics = [...DEFAULT_METRICS];
+        seedDefaultMetrics();
+      }
+      return allMetrics.map(m => {
+        const dailyGoal = m.dailyGoal || defaultGoalFor(m.id);
+        return { ...m, dailyGoal };
+      }).filter(m => {
+        if (m.isDefault || m.id === 'jobs' || m.id === 'leetcode') return true;
+        const owner = normalizeEmail(m.userEmail);
+        if (!targetEmail) {
+          return !owner;
+        }
+        return owner === targetEmail;
       });
     },
 
@@ -281,7 +424,7 @@ const TrackerStorage = (() => {
         return !found || found.dailyGoal === goal;
       };
       return enqueueWrite(async () => {
-        return mutateVerified(STORAGE_KEYS.METRICS, safeGetMetrics, current => {
+        return mutateVerified(readMetricsRaw, writeMetricsRaw, current => {
           const allMetrics = current.length === 0 ? [...DEFAULT_METRICS] : current;
           const updated = allMetrics.map(m => (m && m.id === metricId ? { ...m, dailyGoal: goal } : m));
           return { write: true, value: updated, verify: hasGoal, result: true };
@@ -313,7 +456,7 @@ const TrackerStorage = (() => {
         };
 
         const hasMetric = list => list.some(m => m && m.id === newMetric.id);
-        return mutateVerified(STORAGE_KEYS.METRICS, safeGetMetrics, current => {
+        return mutateVerified(readMetricsRaw, writeMetricsRaw, current => {
           if (hasMetric(current)) return { write: false, result: newMetric };
           const allMetrics = current.length === 0 ? [...DEFAULT_METRICS] : current;
           return {
@@ -401,7 +544,7 @@ const TrackerStorage = (() => {
       return enqueueWrite(async () => {
         const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
         const isGone = list => !list.some(m => m && m.id === id);
-        return mutateVerified(STORAGE_KEYS.METRICS, safeGetMetrics, (allMetrics, alreadyWrote) => {
+        return mutateVerified(readMetricsRaw, writeMetricsRaw, (allMetrics, alreadyWrote) => {
           const target = allMetrics.find(m => m && m.id === id);
           if (!target) return { write: false, result: alreadyWrote };
           if (target.isDefault || target.id === 'jobs' || target.id === 'leetcode') {
@@ -447,37 +590,33 @@ const TrackerStorage = (() => {
       }
       const normalizedTarget = normalizeEmail(targetUserEmail);
 
-      return new Promise(resolve => {
-        getStorageArea().get([STORAGE_KEYS.LOGS], result => {
-          const rawLogs = safeGetLogs(result);
-          const indexed = rawLogs.map((l, index) => ({ log: l, originalIndex: index }));
-          const filtered = indexed.filter(item => {
-            const l = item.log;
-            if (!l) return false;
-            const logEmail = normalizeEmail(l.userEmail);
-            if (!normalizedTarget) {
-              if (logEmail) return false;
-            } else {
-              if (logEmail !== normalizedTarget) return false;
-            }
-            if (metricId && l.metricId !== metricId) return false;
-            if (startDate && l.date < startDate) return false;
-            if (endDate && l.date > endDate) return false;
-            return true;
-          });
-
-          // Sort by timestamp descending; tie-breaker: reverse original insertion order (LIFO)
-          filtered.sort((a, b) => {
-            const timeA = new Date(a.log.timestamp || a.log.date || 0).getTime();
-            const timeB = new Date(b.log.timestamp || b.log.date || 0).getTime();
-            const diff = timeB - timeA;
-            if (diff !== 0) return diff;
-            return b.originalIndex - a.originalIndex;
-          });
-
-          resolve(filtered.map(item => item.log));
-        });
+      const rawLogs = await readLogsRaw();
+      const indexed = rawLogs.map((l, index) => ({ log: l, originalIndex: index }));
+      const filtered = indexed.filter(item => {
+        const l = item.log;
+        if (!l) return false;
+        const logEmail = normalizeEmail(l.userEmail);
+        if (!normalizedTarget) {
+          if (logEmail) return false;
+        } else {
+          if (logEmail !== normalizedTarget) return false;
+        }
+        if (metricId && l.metricId !== metricId) return false;
+        if (startDate && l.date < startDate) return false;
+        if (endDate && l.date > endDate) return false;
+        return true;
       });
+
+      // Sort by timestamp descending; tie-breaker: reverse original insertion order (LIFO)
+      filtered.sort((a, b) => {
+        const timeA = new Date(a.log.timestamp || a.log.date || 0).getTime();
+        const timeB = new Date(b.log.timestamp || b.log.date || 0).getTime();
+        const diff = timeB - timeA;
+        if (diff !== 0) return diff;
+        return b.originalIndex - a.originalIndex;
+      });
+
+      return filtered.map(item => item.log);
     },
 
     async addLog(logData = {}, userEmailOverride) {
@@ -500,7 +639,7 @@ const TrackerStorage = (() => {
         };
 
         const hasLog = list => list.some(l => l && l.id === newLog.id);
-        return mutateVerified(STORAGE_KEYS.LOGS, safeGetLogs, logs => {
+        return mutateVerified(readLogsRaw, writeLogsRaw, logs => {
           if (hasLog(logs)) return { write: false, result: newLog };
           return { write: true, value: logs.concat([newLog]), verify: hasLog, result: newLog };
         });
@@ -512,7 +651,7 @@ const TrackerStorage = (() => {
       return enqueueWrite(async () => {
         const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
         const isGone = list => !list.some(l => l && l.id === id);
-        return mutateVerified(STORAGE_KEYS.LOGS, safeGetLogs, (logs, alreadyWrote) => {
+        return mutateVerified(readLogsRaw, writeLogsRaw, (logs, alreadyWrote) => {
           const log = logs.find(l => l && l.id === id);
           if (!log) return { write: false, result: alreadyWrote };
           const logEmail = normalizeEmail(log.userEmail);
@@ -532,7 +671,7 @@ const TrackerStorage = (() => {
       return enqueueWrite(async () => {
         const targetDate = date || getLocalDateStr();
         const targetEmail = normalizeEmail(userEmailOverride !== undefined ? userEmailOverride : await getCurrentUserEmail());
-        return mutateVerified(STORAGE_KEYS.LOGS, safeGetLogs, (logs, alreadyWrote) => {
+        return mutateVerified(readLogsRaw, writeLogsRaw, (logs, alreadyWrote) => {
           const indexed = logs.map((l, index) => ({ log: l, originalIndex: index }));
           const filtered = indexed.filter(item => {
             const l = item.log;
@@ -698,6 +837,7 @@ const TrackerStorage = (() => {
     },
 
     async getTheme() {
+      await migrateSimpleKeyIfNeeded(STORAGE_KEYS.THEME);
       return new Promise(resolve => {
         getStorageArea().get([STORAGE_KEYS.THEME], result => {
           const theme = result && result[STORAGE_KEYS.THEME];
@@ -728,9 +868,19 @@ const TrackerStorage = (() => {
     onChanged(cb) {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {
-          if (area === 'local' && (changes.logs || changes.metrics || changes.pt_auth_user || changes.pt_visible_metrics || changes.pt_theme)) {
+          if (area !== 'sync' && area !== 'local') return;
+          const logsTouched = Object.keys(changes).some(k => k === LOGS_META_KEY || k.indexOf('logs__c') === 0);
+          const hasOther = changes.logs || changes.metrics || changes.pt_auth_user || changes.pt_visible_metrics || changes.pt_theme || changes.pt_widgets;
+          if (!logsTouched && !hasOther) return;
+          if (!logsTouched) {
             cb(changes);
+            return;
           }
+          // The chunked keys are an implementation detail: reassemble the
+          // full array so listeners still see a plain changes.logs.newValue.
+          readLogsRaw().then(logs => {
+            cb(Object.assign({}, changes, { logs: { newValue: logs } }));
+          });
         });
       }
     }

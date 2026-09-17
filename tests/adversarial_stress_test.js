@@ -40,6 +40,22 @@ class MockChromeStorage {
     }, 0);
   }
 
+  remove(keys, cb) {
+    const keyList = Array.isArray(keys) ? keys : [keys];
+    const changes = {};
+    keyList.forEach(k => {
+      if (this.store[k] !== undefined) {
+        changes[k] = { oldValue: JSON.parse(JSON.stringify(this.store[k])), newValue: undefined };
+        delete this.store[k];
+      }
+    });
+
+    setTimeout(() => {
+      if (Object.keys(changes).length > 0) this.listeners.forEach(fn => fn(changes, 'local'));
+      if (cb) cb();
+    }, 0);
+  }
+
   clear() {
     this.store = {};
   }
@@ -63,6 +79,7 @@ global.chrome = {
     local: {
       get: (keys, cb) => mockStorage.get(keys, cb),
       set: (items, cb) => mockStorage.set(items, cb),
+      remove: (keys, cb) => mockStorage.remove(keys, cb),
     },
     onChanged: {
       addListener: (fn) => mockStorage.addListener(fn),
@@ -529,7 +546,16 @@ async function runAllTests() {
     assert.strictEqual(logsA.length, 20, 'User A must have exactly 20 logs');
     assert.strictEqual(logsB.length, 20, 'User B must have exactly 20 logs');
 
-    const allRaw = mockStorage.store.logs || [];
+    // Logs are chunked across 'logs__meta' + 'logs__c0', 'logs__c1', ... to
+    // stay under chrome.storage.sync's per-item quota; reassemble them to
+    // check the physical storage layer directly, the same way the module does.
+    const logsMeta = mockStorage.store['logs__meta'];
+    const chunkCount = logsMeta && typeof logsMeta.count === 'number' ? logsMeta.count : 0;
+    let allRaw = [];
+    for (let i = 0; i < chunkCount; i++) {
+      const chunk = mockStorage.store['logs__c' + i];
+      if (Array.isArray(chunk)) allRaw = allRaw.concat(chunk);
+    }
     assert.strictEqual(allRaw.length, 40, 'Total stored logs must be exactly 40 (no lost writes)');
   });
 

@@ -84,6 +84,20 @@ function createMockChromeStorage(options = {}) {
         if (cb) cb();
       });
     },
+    remove: (keys, cb) => {
+      delay().then(() => {
+        const keyList = Array.isArray(keys) ? keys : [keys];
+        const changes = {};
+        keyList.forEach(k => {
+          if (memoryStore[k] !== undefined) {
+            changes[k] = { oldValue: JSON.parse(JSON.stringify(memoryStore[k])), newValue: undefined };
+            delete memoryStore[k];
+          }
+        });
+        if (Object.keys(changes).length > 0) listeners.forEach(l => l(changes, 'local'));
+        if (cb) cb();
+      });
+    },
     clear: () => {
       for (const k of Object.keys(memoryStore)) {
         delete memoryStore[k];
@@ -714,6 +728,8 @@ async function runAllTests() {
       const mockEnv = createMockChromeStorage();
       const TrackerStorage = loadTrackerStorage(mockEnv);
 
+      // Before any write, storage holds no chunked meta yet: the plain 'logs'
+      // key still stands in for it (a pre-sync install, or here, a direct poke).
       mockEnv.memoryStore['logs'] = null;
       assert.deepStrictEqual(await TrackerStorage.getLogs(), []);
       assert.strictEqual(await TrackerStorage.undoLastLog(), false);
@@ -721,15 +737,18 @@ async function runAllTests() {
       assert.ok(added1.id);
       assert.strictEqual((await TrackerStorage.getLogs()).length, 1);
 
-      mockEnv.memoryStore['logs'] = 'CORRUPTED_STRING';
+      // That addLog wrote chunked meta, which now takes priority: corrupt it
+      // directly to simulate storage damage from here on.
+      mockEnv.memoryStore['logs__meta'] = 'CORRUPTED_STRING';
       assert.deepStrictEqual(await TrackerStorage.getLogs(), []);
       const added2 = await TrackerStorage.addLog({ metricId: 'jobs' });
       assert.ok(added2.id);
 
-      mockEnv.memoryStore['logs'] = { foo: 'bar' };
+      mockEnv.memoryStore['logs__meta'] = { foo: 'bar' };
       assert.deepStrictEqual(await TrackerStorage.getLogs(), []);
 
-      mockEnv.memoryStore['logs'] = [
+      mockEnv.memoryStore['logs__meta'] = { count: 1 };
+      mockEnv.memoryStore['logs__c0'] = [
         null,
         undefined,
         { id: 'valid-1', metricId: 'jobs', date: '2026-09-02', timestamp: '2026-09-02T12:00:00Z', count: 1, userEmail: null },

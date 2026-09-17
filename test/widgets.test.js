@@ -1,6 +1,6 @@
 // Popup widget layout tests: registry, normalization of whatever is in
 // storage, add / remove / move / update, singleton enforcement, tracker
-// binding resolution, and persistence through chrome.storage.local.
+// binding resolution, and persistence through chrome.storage.sync.
 const assert = require('assert');
 const path = require('path');
 const { installMockChrome, uninstallMockChrome } = require('./mock_chrome');
@@ -67,7 +67,7 @@ async function run() {
     const W = fresh();
     let items = await W.load();
     assert.strictEqual(items.length, 6);
-    assert.ok(chrome.storage.local.store[W.STORAGE_KEY], 'first load persists the default layout');
+    assert.ok(chrome.storage.sync.store[W.STORAGE_KEY], 'first load persists the default layout');
     assert.deepStrictEqual(items.map(i => i.id), ['timer-default', 'timeStats-default', 'goal-default', 'details-default', 'summary-default', 'activity-default'], 'default ids are fixed');
 
     // Regression: on a fresh install, an edit keyed by a default id must land.
@@ -79,7 +79,7 @@ async function run() {
     assert.strictEqual(items.length, 7);
     assert.strictEqual(items[6].type, 'streak');
     assert.strictEqual(items[6].options.metricId, 'leetcode');
-    assert.strictEqual(chrome.storage.local.store[W.STORAGE_KEY].items.length, 7, 'add persisted');
+    assert.strictEqual(chrome.storage.sync.store[W.STORAGE_KEY].items.length, 7, 'add persisted');
 
     items = await W.add('activity', { days: 7 });
     assert.strictEqual(items.length, 8, 'non-singleton types can be added repeatedly');

@@ -203,9 +203,34 @@ function createMockChrome(initialStore = {}) {
     return Promise.resolve();
   };
 
+  // Real chrome.storage.sync enforces an 8KB-per-item / 100KB-total quota,
+  // which is exactly what the logs chunking in shared/storage.js exists to
+  // respect. Mirror those limits here so a chunking bug shows up as a test
+  // failure instead of only at real quota time.
+  const syncStorageArea = new MockStorageArea('sync', eventBus);
+  syncStorageArea.QUOTA_BYTES = 102400;
+  syncStorageArea.QUOTA_BYTES_PER_ITEM = 8192;
+  const baseSyncSet = syncStorageArea.set.bind(syncStorageArea);
+  syncStorageArea.set = function (items, callback) {
+    for (const [key, value] of Object.entries(items || {})) {
+      const size = key.length + JSON.stringify(value === undefined ? null : value).length;
+      if (size > syncStorageArea.QUOTA_BYTES_PER_ITEM) {
+        const err = new Error('QUOTA_BYTES_PER_ITEM quota exceeded for key "' + key + '"');
+        if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.lastError = { message: err.message };
+        if (typeof callback === 'function') process.nextTick(() => {
+          callback();
+          if (typeof chrome !== 'undefined' && chrome.runtime) chrome.runtime.lastError = null;
+        });
+        return Promise.resolve();
+      }
+    }
+    return baseSyncSet(items, callback);
+  };
+
   const mock = {
     storage: {
       local: localStorageArea,
+      sync: syncStorageArea,
       session: sessionStorageArea,
       onChanged: eventBus
     },

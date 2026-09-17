@@ -50,7 +50,7 @@ On the LeetCode tab, **Space** starts and pauses the timer when nothing else has
 
 ### Calendar overlay
 
-`content/content.js` finds day cells on Google Calendar and reconciles badges into them, re-rendering only what changed. Dates come from Calendar's own `data-datekey` attribute, decoded with
+`content/content.js` finds day cells on Google Calendar and reconciles badges into them, re-rendering only what changed. Badges are drawn in a layer of the extension's own, never inside Calendar's cells, so Calendar's layout and its event and task chips are untouched. Each day gets a small right-aligned row of pills, one per tracker with entries that day, labelled with the tracker's name ("1 Job Application", "2 LeetCode"); where a column is too narrow for the words, the pills show the count alone and keep the words in their tooltip. They sit beside the date number in Week and Day view and on the date line in Month view; a filled pill means the daily goal was met. Hovering a day shows a **+** for a quick entry. Dates come from Calendar's own `data-datekey` attribute, decoded with
 
 ```
 dateKey = (year - 1970) * 512 + (month - 1) * 32 + day + 32

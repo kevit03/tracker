@@ -895,6 +895,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const GRIP_SVG = '<svg viewBox="0 0 12 12" width="12" height="12" fill="currentColor" aria-hidden="true" focusable="false"><circle cx="4" cy="2.5" r="1.1"/><circle cx="8" cy="2.5" r="1.1"/><circle cx="4" cy="6" r="1.1"/><circle cx="8" cy="6" r="1.1"/><circle cx="4" cy="9.5" r="1.1"/><circle cx="8" cy="9.5" r="1.1"/></svg>';
   const GEAR_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
 
+  // One glyph per widget type so the add-widget list reads at a glance
+  // instead of as a plain column of names.
+  const WIDGET_TYPE_ICON = {
+    goal: '<circle cx="7" cy="7" r="5.3" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="7" r="2.8" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="7" r="0.9" fill="currentColor"/>',
+    summary: '<rect x="2" y="2.8" width="5.5" height="2" rx="1" fill="currentColor"/><rect x="2" y="6" width="8" height="2" rx="1" fill="currentColor"/><rect x="2" y="9.2" width="10" height="2" rx="1" fill="currentColor"/>',
+    activity: '<rect x="2.3" y="7.5" width="2.6" height="4" rx="1" fill="currentColor"/><rect x="5.7" y="4.8" width="2.6" height="6.7" rx="1" fill="currentColor"/><rect x="9.1" y="2" width="2.6" height="9.5" rx="1" fill="currentColor"/>',
+    streak: '<path d="M7 12.6c2.5 0 4-1.6 4-3.8 0-1.8-1-3-1.8-4.1.1 1.1-.5 1.7-1 1.7.4-1.8-.3-3.4-1.8-4.7-.1 1.4-.8 2.6-1.8 3.6-.9.9-1.4 2-1.4 3.3 0 2.2 1.4 4 3.8 4z" fill="currentColor"/>',
+    timer: '<circle cx="7" cy="7.6" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M7 5v2.6l2 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.2 1.6h3.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>',
+    timeStats: '<path d="M2 9.5a5 5 0 1 1 10 0" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M7 9.5 9.3 6.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="7" cy="9.5" r="0.9" fill="currentColor"/>',
+    details: '<rect x="2.5" y="1.8" width="9" height="10.4" rx="1.4" stroke="currentColor" stroke-width="1.2"/><path d="M4.8 5h4.4M4.8 7.3h4.4M4.8 9.6h2.8" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>'
+  };
+
   function metricFor(item) {
     const id = WidgetLayout.resolveMetricId(item, activeMetricId, metrics);
     return metrics.find(m => m.id === id) || metrics.find(m => m.id === activeMetricId) || metrics[0];
@@ -1338,13 +1350,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     const list = el('add-widget-list');
     list.innerHTML = '';
     WidgetLayout.availableTypes(widgetItems).forEach(t => {
-      // Name only; the description lives in the tooltip so the list stays lean.
       const row = document.createElement('div');
       row.className = 'widget-picker-row';
-      row.title = t.description;
+      const icon = document.createElement('span');
+      icon.className = 'widget-picker-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.innerHTML = '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" focusable="false">' + (WIDGET_TYPE_ICON[t.type] || '') + '</svg>';
       const text = document.createElement('div');
-      text.className = 'widget-picker-name';
-      text.textContent = t.name;
+      text.className = 'widget-picker-text';
+      const name = document.createElement('div');
+      name.className = 'widget-picker-name';
+      name.textContent = t.name;
+      const desc = document.createElement('div');
+      desc.className = 'widget-picker-desc';
+      desc.textContent = t.description;
+      text.appendChild(name);
+      text.appendChild(desc);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'widget-add-btn' + (t.added ? ' added' : '');
@@ -1357,6 +1378,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const ok = await applyLayout(WidgetLayout.add(t.type, { metricId: WidgetLayout.ACTIVE }), t.name + ' widget added.');
         if (ok) closeModal(el('add-widget-modal'));
       });
+      row.appendChild(icon);
       row.appendChild(text);
       row.appendChild(btn);
       list.appendChild(row);
@@ -1805,7 +1827,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // shares TrackerStorage.onChanged, never re-renders for a popup-only key.
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || !changes[WidgetLayout.STORAGE_KEY]) return;
+      if ((area !== 'sync' && area !== 'local') || !changes[WidgetLayout.STORAGE_KEY]) return;
       widgetItems = WidgetLayout.normalize(changes[WidgetLayout.STORAGE_KEY].newValue);
       renderWidgets();
     });

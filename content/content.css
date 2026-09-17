@@ -1,54 +1,61 @@
-/* ===== Day cell badges (positioned directly under the date header) ===== */
+/* ===== Day badges =====
+   One fixed, click-through layer over the page. Each day is a small
+   right-aligned row of count pills plus a quick-add button, positioned by
+   content.js from the day's rectangle: beside the date number in Week and
+   Day view, on the date line in Month view. Only the pills and the button
+   take pointer events, so Calendar's events and tasks work exactly as
+   before. */
 
-.pt-cell-overlay {
-  position: absolute;
-  top: 26px; /* Directly under the date number circle */
-  left: 4px;
-  right: 4px;
-  z-index: 99;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  pointer-events: auto;
+#pt-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
   font-family: 'Google Sans', Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
   user-select: none;
-  max-height: calc(100% - 28px);
+}
+
+.pt-day {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+
+/* Week and Day view: the column header's right edge, pills above, button
+   below, beside the centred date number. */
+.pt-day[data-anchor="header"] {
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+/* Names can be long; a day's row is capped to its column by content.js and
+   pills truncate before they spill into the next day. */
+.pt-cell-overlay {
+  display: flex;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
 }
 
 .pt-badge {
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 18px;
+  gap: 3px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  letter-spacing: 0.2px;
   cursor: default;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-  box-shadow: 0 1px 2px rgba(60,64,67,0.12);
-  border-left: 3px solid currentColor;
-}
-
-.pt-badge.pt-goal-met {
-  color: #fff !important;
-  font-weight: 700;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-
-.pt-badge.pt-goal-met .pt-badge-dot {
-  background-color: #fff !important;
-}
-
-.pt-badge-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
+  min-width: 0;
 }
 
 .pt-badge-text {
@@ -57,12 +64,21 @@
   white-space: nowrap;
 }
 
-/* Quick Add button positioned in top right of cell, next to date header */
+.pt-day.pt-compact .pt-badge-name {
+  display: none;
+}
+
+.pt-badge-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Quick add: hidden until its day is hovered (content.js tracks the hover
+   because the button is not inside the cell). */
 
 .pt-quick-add-cell {
-  position: absolute;
-  top: 4px;
-  right: 4px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -72,18 +88,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   font-size: 12px;
   font-weight: bold;
   line-height: 1;
   cursor: pointer;
+  flex-shrink: 0;
   opacity: 0;
-  z-index: 20;
-  transition: all 0.12s;
+  pointer-events: none;
+  transition: opacity 0.12s, background 0.12s, transform 0.12s;
   box-shadow: 0 1px 2px rgba(60,64,67,0.15);
 }
 
-[data-datekey]:hover .pt-quick-add-cell, [role="gridcell"]:hover .pt-quick-add-cell, .pt-quick-add-cell:hover, .pt-quick-add-cell:focus-visible {
+.pt-day.pt-hover .pt-quick-add-cell,
+.pt-day:hover .pt-quick-add-cell,
+.pt-quick-add-cell:focus-visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .pt-quick-add-cell:hover {
@@ -93,40 +114,28 @@
   transform: scale(1.1);
 }
 
-/* Day-cell chrome follows the OS scheme, because these elements live inside
-   Google's grid and cannot be reached by the dock's .pt-dark class.
-   Google Calendar's default theme setting is "Device default", so this
-   tracks it in the common case; on a mismatch the controls stay legible,
-   just cooler than their surroundings. */
+/* The quick-add button follows the OS scheme: it floats over Google's grid,
+   and Calendar's default theme setting is "Device default". */
 
 @media (prefers-color-scheme: dark) {
-.pt-quick-add-cell {
+  .pt-quick-add-cell {
     background: #292a2d;
     border-color: #5f6368;
     color: #e8eaed;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
   }
 
-.pt-quick-add-cell:hover {
+  .pt-quick-add-cell:hover {
     background: #8ab4f8;
     border-color: #8ab4f8;
     color: #202124;
   }
 
-.pt-quick-add-cell:focus-visible {
+  .pt-quick-add-cell:focus-visible {
     outline-color: #8ab4f8;
   }
-
-.pt-badge {
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  }
 }
 
-/* Suppress any badge or quick-add from appearing in column headers or nav headers */
-
-[role="columnheader"] .pt-cell-overlay, [role="columnheader"] .pt-quick-add-cell, header .pt-cell-overlay, header .pt-quick-add-cell, aside .pt-cell-overlay, aside .pt-quick-add-cell {
-  display: none !important;
-}
 
 /* ===== Keyboard focus and shared modal controls =====
    Scoped to our own roots so nothing leaks into Google's UI. The ring is

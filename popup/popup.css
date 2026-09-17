@@ -1551,26 +1551,29 @@ body.pt-dark .modal-content.glass-card {
   font-weight: 600;
 }
 
-/* Add-widget button: centered, dashed, the same idiom as the add-tracker plus */
+/* Add-widget: a full-width dashed pill, the same idiom as the picker's own
+   Add buttons below, so the entry point reads as an inviting action rather
+   than an unlabeled circle floating in empty space. */
 .add-widget-row {
-  display: flex;
-  justify-content: center;
   padding: 2px 0;
 }
 
 .add-widget-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: 1px dashed var(--border);
-  background: transparent;
-  color: var(--text-sec);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
+  padding: 9px;
+  border-radius: var(--radius);
+  border: 1px dashed var(--text-muted);
+  background: transparent;
+  color: var(--text-sec);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
@@ -1581,6 +1584,15 @@ body.pt-dark .modal-content.glass-card {
   border-style: solid;
 }
 
+.add-widget-btn:active {
+  transform: scale(0.98);
+}
+
+.add-widget-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
 .widget-picker {
   display: flex;
   flex-direction: column;
@@ -1589,13 +1601,14 @@ body.pt-dark .modal-content.glass-card {
   scrollbar-width: thin;
 }
 
-/* One line per widget, hairline dividers, nothing else */
+/* One row per widget: an icon chip so the list scans by shape, name plus a
+   visible one-line description (previously only a hover tooltip), and the
+   Add pill. Hairline dividers, tight padding, nothing wasted. */
 .widget-picker-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 28px 4px;
+  gap: 10px;
+  padding: 9px 4px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1603,10 +1616,38 @@ body.pt-dark .modal-content.glass-card {
   border-bottom: none;
 }
 
+.widget-picker-icon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--blue-light);
+  color: var(--blue-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.widget-picker-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .widget-picker-name {
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-picker-desc {
+  font-size: 11px;
+  color: var(--text-sec);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1618,13 +1659,13 @@ body.pt-dark .modal-content.glass-card {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 7px 12px;
+  padding: 6px 10px;
   border-radius: 6px;
   border: 1px dashed var(--text-muted);
   background: transparent;
   color: var(--text-sec);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1;
   cursor: pointer;

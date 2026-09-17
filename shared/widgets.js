@@ -79,9 +79,12 @@ const WidgetLayout = (() => {
     return type + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   }
 
+  // chrome.storage.sync carries the layout across devices; falls back to
+  // local (and then a localStorage shim) when sync is unavailable.
   function getStorageArea() {
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      return chrome.storage.local;
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      if (chrome.storage.sync) return chrome.storage.sync;
+      if (chrome.storage.local) return chrome.storage.local;
     }
     return {
       get: (keys, cb) => {
@@ -103,6 +106,27 @@ const WidgetLayout = (() => {
         if (cb) cb();
       }
     };
+  }
+
+  // A device upgrading from a local-only build still has its layout sitting
+  // in chrome.storage.local; sync starts out empty until this runs once. Only
+  // copies when sync has nothing yet, so it never clobbers a layout another
+  // device already synced in.
+  let widgetsMigrated = false;
+  async function migrateFromLocalIfNeeded() {
+    if (widgetsMigrated) return;
+    widgetsMigrated = true;
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.sync || !chrome.storage.local) return;
+    try {
+      const syncResult = await new Promise(r => chrome.storage.sync.get([STORAGE_KEY], r));
+      if (syncResult && syncResult[STORAGE_KEY] !== undefined) return;
+      const localResult = await new Promise(r => chrome.storage.local.get([STORAGE_KEY], r));
+      if (localResult && localResult[STORAGE_KEY] !== undefined) {
+        await new Promise(r => chrome.storage.sync.set({ [STORAGE_KEY]: localResult[STORAGE_KEY] }, r));
+      }
+    } catch (e) {
+      // Best effort: sync simply starts with the default layout if this fails.
+    }
   }
 
   function normalizeOptions(type, raw) {
@@ -152,7 +176,7 @@ const WidgetLayout = (() => {
   }
 
   function readRaw() {
-    return new Promise(resolve => {
+    return migrateFromLocalIfNeeded().then(() => new Promise(resolve => {
       getStorageArea().get([STORAGE_KEY], result => {
         if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.lastError) {
           resolve(null);
@@ -160,7 +184,7 @@ const WidgetLayout = (() => {
         }
         resolve(result && result[STORAGE_KEY] !== undefined ? result[STORAGE_KEY] : null);
       });
-    });
+    }));
   }
 
   function writeRaw(items) {

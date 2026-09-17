@@ -248,12 +248,12 @@ async function run() {
     assert.strictEqual(logTrim.role, 'Lead Architect');
     assert.strictEqual(logTrim.notes, 'Remote role');
 
-    // Corrupt storage recovery (e.g. logs set to non-array or null)
-    global.chrome.storage.local.store['logs'] = 'corrupt_string_value';
+    // Corrupt storage recovery (e.g. the chunk meta set to non-object or null)
+    global.chrome.storage.sync.store['logs__meta'] = 'corrupt_string_value';
     const recoveredLogs = await TrackerStorage.getLogs();
     assert.deepStrictEqual(recoveredLogs, []);
 
-    global.chrome.storage.local.store['logs'] = null;
+    global.chrome.storage.sync.store['logs__meta'] = null;
     const addedAfterCorruption = await TrackerStorage.addLog({ metricId: 'jobs' });
     assert.ok(addedAfterCorruption.id);
 
