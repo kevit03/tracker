@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Clicking the dimmed backdrop dismisses any modal
-  ['new-metric-modal', 'metric-settings-modal', 'email-signin-modal', 'add-widget-modal', 'widget-settings-modal'].forEach(id => {
+  ['new-metric-modal', 'metric-settings-modal', 'email-signin-modal', 'add-widget-modal', 'widget-settings-modal', 'calorie-keys-modal'].forEach(id => {
     const modal = el(id);
     if (modal) {
       modal.addEventListener('click', (e) => {
@@ -585,14 +585,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     quickAdd.style.setProperty('--flow-color', current.color);
     quickAdd.style.setProperty('--flow-on-color', readableTextOn(current.color));
 
+    // Calories is a budget to log conversationally, not a +1/-1 counter: swap
+    // the action row for the calorie chat panel while that tab is selected.
+    const isBudget = !!current.isBudget;
+    const actionButtons = el('action-buttons');
+    if (actionButtons) actionButtons.classList.toggle('hidden', isBudget);
+    const caloriePanel = el('calorie-chat-widget');
+    if (caloriePanel) caloriePanel.classList.toggle('hidden', !isBudget);
+    if (isBudget) {
+      initCalorieChatOnce();
+      renderCalorieChatStatus();
+    }
+
     // Streak follows the active tracker rather than always reporting Job Applications
     const metricStreak = computeStreak(activeMetricId);
     el('streak-count').textContent = metricStreak;
     const streakPill = el('streak-pill');
     if (streakPill) {
       streakPill.title = metricStreak > 0
-        ? metricStreak + ' consecutive day(s) hitting the ' + current.name + ' daily goal'
-        : 'No active ' + current.name + ' streak. Hit today\'s daily goal to start one.';
+        ? metricStreak + ' consecutive day(s) ' + (isBudget ? 'staying at or under the ' + current.name + ' daily budget' : 'hitting the ' + current.name + ' daily goal')
+        : (isBudget ? 'No active ' + current.name + ' streak. Log a day at or under budget to start one.' : 'No active ' + current.name + ' streak. Hit today\'s daily goal to start one.');
     }
 
     // First-run guidance: only for an account with no data at all
@@ -913,7 +925,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function goalFor(metric) {
-    return metric.dailyGoal || (metric.id === 'jobs' ? 5 : (metric.id === 'leetcode' ? 2 : 1));
+    if (metric.dailyGoal) return metric.dailyGoal;
+    if (metric.id === 'jobs') return 5;
+    if (metric.id === 'leetcode') return 2;
+    if (metric.id === 'calories') return 2000;
+    return 1;
   }
 
   // Pinned widgets say which tracker they show; widgets that follow the tab
@@ -968,15 +984,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const WIDGET_RENDERERS = {
     goal(body, item, metric) {
+      const isBudget = !!metric.isBudget;
       const todayCount = (stats && stats.today[metric.id]) || 0;
       const goal = goalFor(metric);
-      const met = todayCount >= goal;
+      const met = isBudget ? todayCount <= goal : todayCount >= goal;
       const pin = pinLabel(item, metric);
       if (!body.firstChild) {
         body.innerHTML = [
           '<div class="goal-meter">',
             '<div class="goal-header">',
-              '<span class="goal-label"><span class="widget-pin"></span>Daily Goal: <strong class="goal-target-num" role="button" tabindex="0" title="Open tracker settings (daily goal)"></strong></span>',
+              '<span class="goal-label"><span class="widget-pin"></span><span class="goal-label-text">Daily Goal</span>: <strong class="goal-target-num" role="button" tabindex="0" title="Open tracker settings (daily goal)"></strong></span>',
               '<span class="goal-status"></span>',
             '</div>',
             '<div class="goal-bar-wrap"><div class="goal-bar-fill"></div></div>',
@@ -984,15 +1001,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         ].join('');
       }
       body.querySelector('.widget-pin').textContent = pin ? pin + ' ' : '';
+      body.querySelector('.goal-label-text').textContent = isBudget ? 'Daily Budget' : 'Daily Goal';
       const target = body.querySelector('.goal-target-num');
       target.textContent = goal;
-      target.setAttribute('aria-label', 'Daily goal for ' + metric.name + ' is ' + goal + '. Select to change it.');
+      target.setAttribute('aria-label', (isBudget ? 'Daily budget' : 'Daily goal') + ' for ' + metric.name + ' is ' + goal + '. Select to change it.');
       const status = body.querySelector('.goal-status');
-      status.textContent = todayCount + ' / ' + goal + (met ? ' (Goal Met)' : '');
-      status.style.color = met ? '#1e8e3e' : 'var(--text-main)';
+      status.textContent = todayCount + ' / ' + goal + (met ? (isBudget ? ' (Under Budget)' : ' (Goal Met)') : (isBudget ? ' (Over Budget)' : ''));
+      status.style.color = met ? '#1e8e3e' : (isBudget ? '#d93025' : 'var(--text-main)');
       const fill = body.querySelector('.goal-bar-fill');
       fill.style.width = Math.min(100, Math.round((todayCount / goal) * 100)) + '%';
-      fill.style.backgroundColor = met ? '#1e8e3e' : metric.color;
+      fill.style.backgroundColor = met ? '#1e8e3e' : (isBudget ? '#d93025' : metric.color);
       fill.classList.toggle('goal-met', met);
     },
 
@@ -1658,15 +1676,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     settingsMetricId = current.id;
     metricDeleteArmed = false;
 
+    const isBudget = !!current.isBudget;
     el('metric-settings-title').textContent = current.name + ' Settings';
+    el('metric-settings-goal-label').textContent = isBudget ? 'Daily Calorie Budget' : 'Daily Goal';
     el('metric-settings-goal').value = current.dailyGoal || 1;
+
+    const profileSection = el('calorie-profile-section');
+    if (profileSection) {
+      profileSection.classList.toggle('hidden', !isBudget);
+      el('calorie-profile-result').textContent = '';
+      if (isBudget) prefillCalorieProfile();
+    }
 
     const isBuiltIn = !!current.isDefault || current.id === 'jobs' || current.id === 'leetcode';
     const deleteBtn = el('delete-metric-btn');
     deleteBtn.textContent = 'Delete tracker';
     deleteBtn.classList.toggle('hidden', isBuiltIn);
     el('metric-settings-hint').textContent = isBuiltIn
-      ? 'Built-in trackers cannot be removed. Changing the goal does not affect entries you already logged.'
+      ? (isBudget
+        ? 'Built-in trackers cannot be removed. Changing the budget does not affect entries you already logged.'
+        : 'Built-in trackers cannot be removed. Changing the goal does not affect entries you already logged.')
       : 'Deleting this tracker removes its tab. Entries you already logged stay in storage and in your exports.';
 
     openModal(el('metric-settings-modal'), 'metric-settings-goal');
@@ -1723,6 +1752,279 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   el('close-settings-modal').addEventListener('click', () => closeModal(el('metric-settings-modal')));
   el('cancel-settings-btn').addEventListener('click', () => closeModal(el('metric-settings-modal')));
+
+  /* ---------- Calorie profile (TDEE-style budget estimate) ---------- */
+
+  async function prefillCalorieProfile() {
+    let profile;
+    try {
+      profile = await CalorieTracker.CalorieKeys.getProfile();
+    } catch (err) {
+      return;
+    }
+    if (!profile) return;
+    if (profile.weightLb) el('calorie-profile-weight').value = profile.weightLb;
+    if (profile.heightIn) el('calorie-profile-height').value = profile.heightIn;
+    if (profile.age) el('calorie-profile-age').value = profile.age;
+    if (profile.sex) el('calorie-profile-sex').value = profile.sex;
+    if (profile.activityLevel) el('calorie-profile-activity').value = profile.activityLevel;
+    if (profile.deficit !== undefined) el('calorie-profile-deficit').value = profile.deficit;
+  }
+
+  el('calorie-profile-calc-btn').addEventListener('click', async () => {
+    const profile = {
+      weightLb: parseFloat(el('calorie-profile-weight').value),
+      heightIn: parseFloat(el('calorie-profile-height').value),
+      age: parseFloat(el('calorie-profile-age').value),
+      sex: el('calorie-profile-sex').value,
+      activityLevel: el('calorie-profile-activity').value,
+      deficit: parseFloat(el('calorie-profile-deficit').value)
+    };
+    const result = CalorieTracker.estimateCalorieBudget(profile);
+    const resultEl = el('calorie-profile-result');
+    if (!result) {
+      resultEl.textContent = 'Enter a valid weight, height, and age first.';
+      return;
+    }
+    el('metric-settings-goal').value = result.suggestedBudget;
+    resultEl.textContent = 'Suggested budget: ' + result.suggestedBudget + ' kcal/day (BMR ' + result.bmr + ', maintenance ~' + result.tdee + ' kcal/day). Adjust the number above, then Save.';
+    try {
+      await CalorieTracker.CalorieKeys.saveProfile(profile);
+    } catch (err) {
+      // Best effort: the calculated number above is already filled in either way.
+    }
+  });
+
+  /* ---------- Calorie chat: conversational food logger ---------- */
+
+  const calorieChat = {
+    stage: 'idle', // 'idle' | 'asking' | 'working' | 'confirming'
+    originalText: '',
+    questions: [],
+    questionIndex: 0,
+    answers: {},
+    initialized: false
+  };
+
+  function calorieMetric() {
+    return metrics.find(m => m.id === 'calories') || null;
+  }
+
+  function addCalorieMessage(text, role) {
+    const list = el('calorie-chat-messages');
+    if (!list) return null;
+    const div = document.createElement('div');
+    div.className = 'calorie-msg ' + role;
+    div.textContent = text;
+    list.appendChild(div);
+    list.scrollTop = list.scrollHeight;
+    return div;
+  }
+
+  function setCalorieComposerEnabled(enabled, placeholder) {
+    const input = el('calorie-chat-input');
+    const form = el('calorie-chat-form');
+    const btn = form ? form.querySelector('.calorie-chat-send-btn') : null;
+    if (input) {
+      input.disabled = !enabled;
+      if (placeholder) input.placeholder = placeholder;
+    }
+    if (btn) btn.disabled = !enabled;
+  }
+
+  function resetCalorieChat() {
+    calorieChat.stage = 'idle';
+    calorieChat.originalText = '';
+    calorieChat.questions = [];
+    calorieChat.questionIndex = 0;
+    calorieChat.answers = {};
+    setCalorieComposerEnabled(true, 'What did you eat? e.g. slice of bread');
+  }
+
+  function askNextCalorieQuestion() {
+    const q = calorieChat.questions[calorieChat.questionIndex];
+    if (!q) { runCalorieEstimate(); return; }
+    addCalorieMessage(q.prompt, 'bot');
+    setCalorieComposerEnabled(true, q.optional ? 'Answer, or type "no"' : 'Your answer');
+  }
+
+  async function runCalorieEstimate() {
+    calorieChat.stage = 'working';
+    setCalorieComposerEnabled(false, 'Working...');
+    addCalorieMessage('Looking that up...', 'system');
+    const query = CalorieTracker.buildFollowupQuery(calorieChat.originalText, calorieChat.answers);
+    let result;
+    try {
+      const credentials = await CalorieTracker.CalorieKeys.getCredentials();
+      result = await CalorieTracker.estimateCalories({ query, credentials });
+    } catch (err) {
+      result = { calories: null, source: 'manual' };
+    }
+    showCalorieConfirm(query, result);
+  }
+
+  function showCalorieConfirm(query, result) {
+    calorieChat.stage = 'confirming';
+    const list = el('calorie-chat-messages');
+    if (!list) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'calorie-msg-confirm';
+
+    const summary = document.createElement('div');
+    if (result.calories !== null) {
+      const label = result.source === 'nutritionix' ? 'Estimated' : 'Roughly estimated (USDA fallback)';
+      summary.textContent = label + ' for "' + query + '":';
+    } else {
+      summary.textContent = 'Couldn\'t look up "' + query + '" (no API key configured yet, or nothing matched). Enter the calories yourself:';
+    }
+    wrap.appendChild(summary);
+
+    const row = document.createElement('div');
+    row.className = 'calorie-msg-confirm-row';
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '0';
+    input.step = '1';
+    input.value = result.calories !== null ? result.calories : '';
+    input.placeholder = 'kcal';
+    input.setAttribute('aria-label', 'Calories for ' + query);
+    const unitLabel = document.createElement('span');
+    unitLabel.textContent = 'kcal';
+    row.appendChild(input);
+    row.appendChild(unitLabel);
+    wrap.appendChild(row);
+
+    const actions = document.createElement('div');
+    actions.className = 'calorie-msg-confirm-actions';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn-cancel';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', () => {
+      wrap.remove();
+      addCalorieMessage('Cancelled.', 'system');
+      resetCalorieChat();
+    });
+    const logBtn = document.createElement('button');
+    logBtn.type = 'button';
+    logBtn.className = 'btn-submit';
+    logBtn.textContent = 'Log entry';
+    logBtn.addEventListener('click', async () => {
+      const calVal = parseInt(input.value, 10);
+      if (!isFinite(calVal) || calVal < 0) {
+        input.focus();
+        return;
+      }
+      logBtn.disabled = true;
+      try {
+        await TrackerStorage.addLog({ metricId: 'calories', count: calVal, notes: query });
+      } catch (err) {
+        addCalorieMessage('Could not save: ' + errMsg(err), 'system');
+        logBtn.disabled = false;
+        return;
+      }
+      wrap.remove();
+      notifyCalendarTabs();
+      await loadData();
+      const m = calorieMetric();
+      const budget = m ? goalFor(m) : 2000;
+      const todayTotal = (stats && stats.today.calories) || 0;
+      const remaining = budget - todayTotal;
+      addCalorieMessage('Logged ' + calVal + ' kcal. Today: ' + todayTotal + ' / ' + budget + ' kcal ('
+        + (remaining >= 0 ? remaining + ' left' : Math.abs(remaining) + ' over') + ').', 'system');
+      resetCalorieChat();
+    });
+    actions.appendChild(cancelBtn);
+    actions.appendChild(logBtn);
+    wrap.appendChild(actions);
+
+    list.appendChild(wrap);
+    list.scrollTop = list.scrollHeight;
+    setCalorieComposerEnabled(false, 'Confirm the entry above first');
+  }
+
+  function handleCalorieSubmit(text) {
+    const trimmed = text.trim();
+    if (!trimmed || calorieChat.stage === 'working' || calorieChat.stage === 'confirming') return;
+    if (calorieChat.stage === 'idle') {
+      addCalorieMessage(trimmed, 'user');
+      calorieChat.originalText = trimmed;
+      calorieChat.questions = CalorieTracker.getClarifyingQuestions(trimmed);
+      calorieChat.questionIndex = 0;
+      calorieChat.answers = {};
+      calorieChat.stage = 'asking';
+      askNextCalorieQuestion();
+      return;
+    }
+    addCalorieMessage(trimmed, 'user');
+    const q = calorieChat.questions[calorieChat.questionIndex];
+    if (q) calorieChat.answers[q.key] = trimmed;
+    calorieChat.questionIndex++;
+    askNextCalorieQuestion();
+  }
+
+  function renderCalorieChatStatus() {
+    const status = el('calorie-chat-status');
+    if (!status) return;
+    const m = calorieMetric();
+    if (!m || !stats) {
+      status.textContent = 'Ready';
+      status.classList.remove('over-budget', 'under-budget');
+      return;
+    }
+    const budget = goalFor(m);
+    const today = (stats.today && stats.today.calories) || 0;
+    status.textContent = today + ' / ' + budget + ' kcal today';
+    status.classList.toggle('over-budget', today > budget);
+    status.classList.toggle('under-budget', today <= budget);
+  }
+
+  function initCalorieChatOnce() {
+    if (calorieChat.initialized) return;
+    calorieChat.initialized = true;
+    const form = el('calorie-chat-form');
+    const input = el('calorie-chat-input');
+    if (!form || !input) return;
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = input.value;
+      input.value = '';
+      input.style.height = 'auto';
+      handleCalorieSubmit(text);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.dispatchEvent(new Event('submit', { cancelable: true }));
+      }
+    });
+    input.addEventListener('input', () => {
+      input.style.height = 'auto';
+      input.style.height = Math.min(70, input.scrollHeight) + 'px';
+    });
+
+    el('calorie-keys-btn').addEventListener('click', async () => {
+      const creds = await CalorieTracker.CalorieKeys.getCredentials();
+      el('calorie-key-nix-id').value = creds.nutritionixAppId || '';
+      el('calorie-key-nix-key').value = creds.nutritionixApiKey || '';
+      el('calorie-key-usda').value = creds.usdaApiKey || '';
+      openModal(el('calorie-keys-modal'), 'calorie-key-nix-id');
+    });
+  }
+
+  el('calorie-keys-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await CalorieTracker.CalorieKeys.saveCredentials({
+      nutritionixAppId: el('calorie-key-nix-id').value,
+      nutritionixApiKey: el('calorie-key-nix-key').value,
+      usdaApiKey: el('calorie-key-usda').value
+    });
+    closeModal(el('calorie-keys-modal'));
+    showStatus('Nutrition API keys saved.', 'ok');
+  });
+  el('close-calorie-keys-modal').addEventListener('click', () => closeModal(el('calorie-keys-modal')));
+  el('cancel-calorie-keys-btn').addEventListener('click', () => closeModal(el('calorie-keys-modal')));
 
   /* ---------- Export ---------- */
 
@@ -1848,6 +2150,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     await TrackerAuth.ensureValidSession();
   } catch (err) {
     console.warn('Session check skipped:', errMsg(err));
+  }
+
+  // Calories gets its own tab (like Jobs/LeetCode) instead of a widget, since
+  // the whole point is a dedicated conversational logger, not a +1/-1 counter.
+  // Idempotent: a no-op after the first run on any given install.
+  try {
+    await TrackerStorage.ensureCalorieMetric();
+  } catch (err) {
+    console.warn('Calorie tracker setup skipped:', errMsg(err));
   }
 
   await loadData();

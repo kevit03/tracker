@@ -2028,3 +2028,209 @@ body.pt-dark .token-popover {
 }
 
 .hidden { display: none !important; }
+
+/* Calorie chat widget: a compact conversational logger. Dark dock look
+   (inspired by a chat-composer reference) reworked with this popup's own
+   theme tokens so it matches light/dark mode instead of being hardcoded dark. */
+.calorie-chat-widget {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.calorie-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.calorie-chat-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.calorie-chat-status {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-sec);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calorie-chat-status.over-budget { color: var(--red); }
+.calorie-chat-status.under-budget { color: var(--green); }
+
+.calorie-keys-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-sec);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.calorie-keys-btn:hover {
+  background: var(--hover);
+  color: var(--text-main);
+}
+
+.calorie-chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.calorie-msg {
+  max-width: 88%;
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.calorie-msg.bot {
+  align-self: flex-start;
+  background: var(--bg-card-contrast);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  border-bottom-left-radius: 3px;
+}
+
+.calorie-msg.user {
+  align-self: flex-end;
+  background: var(--blue);
+  color: var(--on-blue);
+  border-bottom-right-radius: 3px;
+}
+
+.calorie-msg.system {
+  align-self: center;
+  background: none;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  padding: 2px 4px;
+}
+
+.calorie-msg-confirm {
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 92%;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border-bottom-left-radius: 3px;
+  background: var(--bg-card-contrast);
+  border: 1px solid var(--border);
+}
+
+.calorie-msg-confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.calorie-msg-confirm-row input {
+  width: 70px;
+  padding: 4px 6px;
+  background: var(--bg-input);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11.5px;
+}
+
+.calorie-msg-confirm-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.calorie-chat-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.calorie-chat-input {
+  flex: 1;
+  resize: none;
+  max-height: 70px;
+  padding: 6px 8px;
+  background: var(--bg-input);
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  outline: none;
+}
+
+.calorie-chat-input:focus {
+  border-color: var(--focus-ring);
+}
+
+.calorie-chat-send-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--blue);
+  color: var(--on-blue);
+  cursor: pointer;
+}
+
+.calorie-chat-send-btn:hover {
+  background: var(--blue-hover);
+}
+
+.calorie-chat-send-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Profile-based budget estimate, nested inside the tracker settings modal */
+.calorie-profile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.calorie-profile-grid input,
+.calorie-profile-grid select {
+  padding: 6px 8px;
+  background: var(--bg-input);
+  color: var(--text-main);
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}

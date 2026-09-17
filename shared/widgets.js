@@ -61,12 +61,6 @@ const WidgetLayout = (() => {
       description: 'Company, role, and notes form for the next entry.',
       singleton: true,
       defaults: {}
-    },
-    calorieChat: {
-      name: 'Calorie Tracker',
-      description: 'Type a food and answer a couple of quick questions to log its calories. Tracks today\'s total against your daily budget and the weekly average.',
-      singleton: true,
-      defaults: {}
     }
   };
 
