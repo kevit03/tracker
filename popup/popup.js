@@ -595,6 +595,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isBudget) {
       initCalorieChatOnce();
       renderCalorieChatStatus();
+      renderFoodLog();
     }
 
     // Streak follows the active tracker rather than always reporting Job Applications
@@ -1678,15 +1679,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const isBudget = !!current.isBudget;
     el('metric-settings-title').textContent = current.name + ' Settings';
-    el('metric-settings-goal-label').textContent = isBudget ? 'Daily Calorie Budget' : 'Daily Goal';
     el('metric-settings-goal').value = current.dailyGoal || 1;
 
-    const profileSection = el('calorie-profile-section');
-    if (profileSection) {
-      profileSection.classList.toggle('hidden', !isBudget);
-      el('calorie-profile-result').textContent = '';
-      if (isBudget) prefillCalorieProfile();
+    el('goal-field-plain').classList.toggle('hidden', isBudget);
+    const budgetUi = el('cal-budget-ui');
+    if (budgetUi) {
+      budgetUi.classList.toggle('hidden', !isBudget);
+      if (isBudget) {
+        el('cal-budget-number').value = current.dailyGoal || 2000;
+        setCalorieMode('manual');
+        prefillCalorieProfile();
+      }
     }
+    el('metric-settings-save-btn').textContent = isBudget ? 'Save Budget' : 'Save Goal';
 
     const isBuiltIn = !!current.isDefault || current.id === 'jobs' || current.id === 'leetcode';
     const deleteBtn = el('delete-metric-btn');
@@ -1698,25 +1703,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         : 'Built-in trackers cannot be removed. Changing the goal does not affect entries you already logged.')
       : 'Deleting this tracker removes its tab. Entries you already logged stay in storage and in your exports.';
 
-    openModal(el('metric-settings-modal'), 'metric-settings-goal');
+    openModal(el('metric-settings-modal'), isBudget ? 'cal-budget-number' : 'metric-settings-goal');
   }
 
   el('metric-settings-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const settingsIsBudget = !!(metrics.find(m => m.id === settingsMetricId) || {}).isBudget;
     const goal = parseInt(el('metric-settings-goal').value, 10);
     if (!goal || goal < 1) {
-      showStatus('Enter a daily goal of 1 or more.', 'error');
-      el('metric-settings-goal').focus();
+      showStatus('Enter a ' + (settingsIsBudget ? 'budget' : 'daily goal') + ' of 1 or more.', 'error');
+      (settingsIsBudget ? el('cal-budget-number') : el('metric-settings-goal')).focus();
       return;
     }
     try {
       await TrackerStorage.setMetricGoal(settingsMetricId, goal);
     } catch (err) {
-      showStatus('Could not save that goal: ' + errMsg(err), 'error');
+      showStatus('Could not save that ' + (settingsIsBudget ? 'budget' : 'goal') + ': ' + errMsg(err), 'error');
       return;
     }
     closeModal(el('metric-settings-modal'));
-    showStatus('Daily goal set to ' + goal + '.', 'ok');
+    showStatus(settingsIsBudget ? ('Daily budget set to ' + goal + ' kcal.') : ('Daily goal set to ' + goal + '.'), 'ok');
     notifyCalendarTabs();
     await loadData();
   });
@@ -1753,46 +1759,145 @@ document.addEventListener('DOMContentLoaded', async () => {
   el('close-settings-modal').addEventListener('click', () => closeModal(el('metric-settings-modal')));
   el('cancel-settings-btn').addEventListener('click', () => closeModal(el('metric-settings-modal')));
 
-  /* ---------- Calorie profile (TDEE-style budget estimate) ---------- */
+  /* ---------- Calorie budget: stepper, mode toggle, profile, live preview ---------- */
+
+  // The big stepper number is the only thing the user edits directly; it is
+  // mirrored into the real (hidden-while-budget-mode) #metric-settings-goal
+  // on every change so the existing submit handler needs no changes at all.
+  const CAL_BUDGET_MIN = 200;
+  const CAL_BUDGET_STEP = 50;
+
+  function syncCalBudgetToGoalField() {
+    const n = parseInt(el('cal-budget-number').value, 10);
+    el('metric-settings-goal').value = isFinite(n) ? Math.max(CAL_BUDGET_MIN, n) : '';
+  }
+
+  el('cal-budget-number').addEventListener('input', syncCalBudgetToGoalField);
+
+  el('cal-budget-dec').addEventListener('click', () => {
+    const n = parseInt(el('cal-budget-number').value, 10) || 0;
+    el('cal-budget-number').value = Math.max(CAL_BUDGET_MIN, n - CAL_BUDGET_STEP);
+    syncCalBudgetToGoalField();
+  });
+  el('cal-budget-inc').addEventListener('click', () => {
+    const n = parseInt(el('cal-budget-number').value, 10) || 0;
+    el('cal-budget-number').value = n + CAL_BUDGET_STEP;
+    syncCalBudgetToGoalField();
+  });
+
+  // Manual vs. From-profile is purely a display toggle for the assistant
+  // panel below; the stepper above stays visible and editable either way.
+  function setCalorieMode(mode) {
+    const manual = mode !== 'profile';
+    el('cal-mode-manual-btn').classList.toggle('active', manual);
+    el('cal-mode-manual-btn').setAttribute('aria-selected', manual ? 'true' : 'false');
+    el('cal-mode-profile-btn').classList.toggle('active', !manual);
+    el('cal-mode-profile-btn').setAttribute('aria-selected', !manual ? 'true' : 'false');
+    el('cal-mode-indicator').style.transform = manual ? 'translateX(0)' : 'translateX(100%)';
+    el('calorie-profile-section').classList.toggle('hidden', manual);
+  }
+  el('cal-mode-manual-btn').addEventListener('click', () => setCalorieMode('manual'));
+  el('cal-mode-profile-btn').addEventListener('click', () => setCalorieMode('profile'));
+
+  function setActiveChip(groupEl, value) {
+    Array.from(groupEl.children).forEach(btn => {
+      const active = btn.dataset.value === value;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-checked', active ? 'true' : 'false');
+    });
+  }
+
+  el('calorie-sex-segmented').addEventListener('click', (e) => {
+    const btn = e.target.closest('.cal-segment');
+    if (!btn) return;
+    setActiveChip(el('calorie-sex-segmented'), btn.dataset.value);
+    updateCaloriePreview();
+  });
+
+  el('calorie-activity-chips').addEventListener('click', (e) => {
+    const btn = e.target.closest('.cal-chip');
+    if (!btn) return;
+    setActiveChip(el('calorie-activity-chips'), btn.dataset.value);
+    el('calorie-activity-desc').textContent = btn.dataset.desc || '';
+    updateCaloriePreview();
+  });
+
+  el('calorie-profile-deficit').addEventListener('input', () => {
+    el('calorie-deficit-value').textContent = el('calorie-profile-deficit').value + ' kcal';
+    updateCaloriePreview();
+  });
+
+  ['calorie-profile-weight', 'calorie-profile-height', 'calorie-profile-age'].forEach(id => {
+    el(id).addEventListener('input', updateCaloriePreview);
+  });
+
+  function currentCalorieProfile() {
+    return {
+      weightLb: parseFloat(el('calorie-profile-weight').value),
+      heightIn: parseFloat(el('calorie-profile-height').value),
+      age: parseFloat(el('calorie-profile-age').value),
+      sex: el('calorie-sex-segmented').querySelector('.active').dataset.value,
+      activityLevel: el('calorie-activity-chips').querySelector('.active').dataset.value,
+      deficit: parseFloat(el('calorie-profile-deficit').value)
+    };
+  }
+
+  let lastCalorieEstimate = null;
+
+  function updateCaloriePreview() {
+    const result = CalorieTracker.estimateCalorieBudget(currentCalorieProfile());
+    lastCalorieEstimate = result;
+    const bmrEl = el('calorie-preview-bmr');
+    const tdeeEl = el('calorie-preview-tdee');
+    const budgetEl = el('calorie-preview-budget');
+    if (!result) {
+      bmrEl.textContent = '—';
+      tdeeEl.textContent = '—';
+      budgetEl.textContent = '—';
+      el('calorie-preview').classList.add('cal-preview-empty');
+      return;
+    }
+    el('calorie-preview').classList.remove('cal-preview-empty');
+    bmrEl.textContent = result.bmr.toLocaleString() + ' kcal';
+    tdeeEl.textContent = '~' + result.tdee.toLocaleString() + ' kcal';
+    budgetEl.textContent = result.suggestedBudget.toLocaleString() + ' kcal';
+  }
 
   async function prefillCalorieProfile() {
     let profile;
     try {
       profile = await CalorieTracker.CalorieKeys.getProfile();
     } catch (err) {
-      return;
+      profile = null;
     }
-    if (!profile) return;
-    if (profile.weightLb) el('calorie-profile-weight').value = profile.weightLb;
-    if (profile.heightIn) el('calorie-profile-height').value = profile.heightIn;
-    if (profile.age) el('calorie-profile-age').value = profile.age;
-    if (profile.sex) el('calorie-profile-sex').value = profile.sex;
-    if (profile.activityLevel) el('calorie-profile-activity').value = profile.activityLevel;
-    if (profile.deficit !== undefined) el('calorie-profile-deficit').value = profile.deficit;
+    if (profile) {
+      if (profile.weightLb) el('calorie-profile-weight').value = profile.weightLb;
+      if (profile.heightIn) el('calorie-profile-height').value = profile.heightIn;
+      if (profile.age) el('calorie-profile-age').value = profile.age;
+      if (profile.sex) setActiveChip(el('calorie-sex-segmented'), profile.sex);
+      if (profile.activityLevel) {
+        setActiveChip(el('calorie-activity-chips'), profile.activityLevel);
+        const activeChip = el('calorie-activity-chips').querySelector('.active');
+        el('calorie-activity-desc').textContent = (activeChip && activeChip.dataset.desc) || '';
+      }
+      if (profile.deficit !== undefined) {
+        el('calorie-profile-deficit').value = profile.deficit;
+        el('calorie-deficit-value').textContent = profile.deficit + ' kcal';
+      }
+    }
+    updateCaloriePreview();
   }
 
-  el('calorie-profile-calc-btn').addEventListener('click', async () => {
-    const profile = {
-      weightLb: parseFloat(el('calorie-profile-weight').value),
-      heightIn: parseFloat(el('calorie-profile-height').value),
-      age: parseFloat(el('calorie-profile-age').value),
-      sex: el('calorie-profile-sex').value,
-      activityLevel: el('calorie-profile-activity').value,
-      deficit: parseFloat(el('calorie-profile-deficit').value)
-    };
-    const result = CalorieTracker.estimateCalorieBudget(profile);
-    const resultEl = el('calorie-profile-result');
-    if (!result) {
-      resultEl.textContent = 'Enter a valid weight, height, and age first.';
-      return;
-    }
-    el('metric-settings-goal').value = result.suggestedBudget;
-    resultEl.textContent = 'Suggested budget: ' + result.suggestedBudget + ' kcal/day (BMR ' + result.bmr + ', maintenance ~' + result.tdee + ' kcal/day). Adjust the number above, then Save.';
+  el('calorie-profile-use-btn').addEventListener('click', async () => {
+    if (!lastCalorieEstimate) return;
+    el('cal-budget-number').value = lastCalorieEstimate.suggestedBudget;
+    syncCalBudgetToGoalField();
     try {
-      await CalorieTracker.CalorieKeys.saveProfile(profile);
+      await CalorieTracker.CalorieKeys.saveProfile(currentCalorieProfile());
     } catch (err) {
-      // Best effort: the calculated number above is already filled in either way.
+      // Best effort: the number above is already applied either way.
     }
+    showStatus('Budget updated to ' + lastCalorieEstimate.suggestedBudget + ' kcal. Save to keep it.', 'ok');
   });
 
   /* ---------- Calorie chat: conversational food logger ---------- */
@@ -1803,12 +1908,75 @@ document.addEventListener('DOMContentLoaded', async () => {
     questions: [],
     questionIndex: 0,
     answers: {},
-    initialized: false
+    initialized: false,
+    logDate: '' // 'YYYY-MM-DD'; defaults to today in initCalorieChatOnce
   };
 
   function calorieMetric() {
     return metrics.find(m => m.id === 'calories') || null;
   }
+
+  // Short "Sep 15" style label for the date picker/status line, without the
+  // UTC-midnight day-shift bug of `new Date('YYYY-MM-DD')` in negative-offset
+  // timezones -- parseLocalDateToNoon anchors it at local noon first.
+  function formatLogDateLabel(dateStr) {
+    return TrackerStorage.parseLocalDateToNoon(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  // The chat used to say the exact same "Looking that up...", "Logged X
+  // kcal..." etc. every single time, which reads as canned/robotic on a
+  // feature you use several times a day. These pick a random phrasing each
+  // time instead so the conversation doesn't feel identical on every entry.
+  function pickVariant(options) {
+    return options[Math.floor(Math.random() * options.length)];
+  }
+
+  const CALORIE_COPY = {
+    checking: [
+      'Let me check that...',
+      'One sec, checking...',
+      'Looking into that...',
+      'Give me a moment to check...'
+    ],
+    lookingUp: [
+      'Looking that up...',
+      'Crunching the numbers...',
+      'Checking nutrition data...',
+      'Let me calculate that...'
+    ],
+    cancelled: [
+      'Cancelled.',
+      'No worries, cancelled.',
+      'Scrapped that one.',
+      'Okay, cancelled that.'
+    ],
+    couldNotSave(msg) {
+      return pickVariant([
+        'Could not save: ' + msg,
+        "Hmm, that didn't save: " + msg,
+        'Saving failed: ' + msg
+      ]);
+    },
+    notFood(summary) {
+      const suffix = summary ? ' (' + summary + ')' : '';
+      return pickVariant([
+        'That doesn\'t look like food' + suffix + ' — enter the calories yourself if you want to log it anyway:',
+        'Doesn\'t seem to be something edible' + suffix + ' — you can still log a number by hand below:',
+        'Not sure that\'s food' + suffix + ' — feel free to enter calories manually if you want it logged:'
+      ]);
+    },
+    logged(calVal, dayTotal, budget, remaining, dayLabel) {
+      const overUnder = remaining >= 0 ? remaining + ' left' : Math.abs(remaining) + ' over';
+      const dayPhrase = dayLabel ? dayLabel : 'Today';
+      const dayPhraseLower = dayLabel ? dayLabel : 'today';
+      return pickVariant([
+        'Logged ' + calVal + ' kcal. ' + dayPhrase + ': ' + dayTotal + ' / ' + budget + ' kcal (' + overUnder + ').',
+        calVal + ' kcal logged. You\'re at ' + dayTotal + ' of ' + budget + ' kcal ' + dayPhraseLower + ' (' + overUnder + ').',
+        'Got it — ' + calVal + ' kcal added. Running total: ' + dayTotal + '/' + budget + ' kcal (' + overUnder + ').',
+        'Added ' + calVal + ' kcal to the log. ' + dayTotal + ' / ' + budget + ' kcal so far (' + overUnder + ').'
+      ]);
+    }
+  };
 
   function addCalorieMessage(text, role) {
     const list = el('calorie-chat-messages');
@@ -1851,7 +2019,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function runCalorieEstimate() {
     calorieChat.stage = 'working';
     setCalorieComposerEnabled(false, 'Working...');
-    addCalorieMessage('Looking that up...', 'system');
+    addCalorieMessage(pickVariant(CALORIE_COPY.lookingUp), 'system');
     const query = CalorieTracker.buildFollowupQuery(calorieChat.originalText, calorieChat.answers);
     let result;
     try {
@@ -1871,9 +2039,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     wrap.className = 'calorie-msg-confirm';
 
     const summary = document.createElement('div');
+    summary.className = 'calorie-msg-confirm-summary';
     if (result.calories !== null) {
-      const label = result.source === 'nutritionix' ? 'Estimated' : 'Roughly estimated (USDA fallback)';
-      summary.textContent = label + ' for "' + query + '":';
+      const label = result.source === 'nutritionix' ? 'Estimated'
+        : result.source === 'ai' ? 'AI-estimated'
+        : result.source === 'ai-search' ? 'AI-estimated (web search)'
+        : result.source === 'cross-checked' ? 'Cross-checked'
+        : result.source === 'ai-arbitrated' ? 'AI-arbitrated (sources disagreed)'
+        : 'Roughly estimated (USDA fallback)';
+      let summaryText = label + ' for "' + query + '"';
+      if (result.summary && (result.source === 'ai' || result.source === 'ai-search' || result.source === 'ai-arbitrated')) {
+        summaryText += ' (' + result.summary + ')';
+      }
+      summary.textContent = summaryText + ':';
+      if (Array.isArray(result.checkedAgainst) && result.checkedAgainst.length > 1) {
+        const detail = document.createElement('div');
+        detail.className = 'calorie-msg-confirm-detail';
+        detail.textContent = 'Checked: ' + result.checkedAgainst.map(c => c.source + ' ' + c.calories + ' kcal').join(', ');
+        wrap.appendChild(detail);
+      }
+    } else if (result.reason === 'not-food') {
+      summary.textContent = CALORIE_COPY.notFood(result.summary);
     } else {
       summary.textContent = 'Couldn\'t look up "' + query + '" (no API key configured yet, or nothing matched). Enter the calories yourself:';
     }
@@ -1881,33 +2067,37 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const row = document.createElement('div');
     row.className = 'calorie-msg-confirm-row';
+    const inputGroup = document.createElement('div');
+    inputGroup.className = 'calorie-msg-confirm-input-group';
     const input = document.createElement('input');
     input.type = 'number';
     input.min = '0';
     input.step = '1';
     input.value = result.calories !== null ? result.calories : '';
-    input.placeholder = 'kcal';
+    input.placeholder = '0';
     input.setAttribute('aria-label', 'Calories for ' + query);
     const unitLabel = document.createElement('span');
+    unitLabel.className = 'calorie-msg-confirm-unit';
     unitLabel.textContent = 'kcal';
-    row.appendChild(input);
-    row.appendChild(unitLabel);
+    inputGroup.appendChild(input);
+    inputGroup.appendChild(unitLabel);
+    row.appendChild(inputGroup);
     wrap.appendChild(row);
 
     const actions = document.createElement('div');
     actions.className = 'calorie-msg-confirm-actions';
     const cancelBtn = document.createElement('button');
     cancelBtn.type = 'button';
-    cancelBtn.className = 'btn-cancel';
+    cancelBtn.className = 'calorie-btn calorie-btn-ghost';
     cancelBtn.textContent = 'Cancel';
     cancelBtn.addEventListener('click', () => {
       wrap.remove();
-      addCalorieMessage('Cancelled.', 'system');
+      addCalorieMessage(pickVariant(CALORIE_COPY.cancelled), 'system');
       resetCalorieChat();
     });
     const logBtn = document.createElement('button');
     logBtn.type = 'button';
-    logBtn.className = 'btn-submit';
+    logBtn.className = 'calorie-btn calorie-btn-accent';
     logBtn.textContent = 'Log entry';
     logBtn.addEventListener('click', async () => {
       const calVal = parseInt(input.value, 10);
@@ -1916,10 +2106,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       logBtn.disabled = true;
+      const logDate = calorieChat.logDate || TrackerStorage.getLocalDateStr();
       try {
-        await TrackerStorage.addLog({ metricId: 'calories', count: calVal, notes: query });
+        await TrackerStorage.addLog({ metricId: 'calories', count: calVal, notes: query, date: logDate });
       } catch (err) {
-        addCalorieMessage('Could not save: ' + errMsg(err), 'system');
+        addCalorieMessage(CALORIE_COPY.couldNotSave(errMsg(err)), 'system');
         logBtn.disabled = false;
         return;
       }
@@ -1928,10 +2119,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       await loadData();
       const m = calorieMetric();
       const budget = m ? goalFor(m) : 2000;
-      const todayTotal = (stats && stats.today.calories) || 0;
-      const remaining = budget - todayTotal;
-      addCalorieMessage('Logged ' + calVal + ' kcal. Today: ' + todayTotal + ' / ' + budget + ' kcal ('
-        + (remaining >= 0 ? remaining + ' left' : Math.abs(remaining) + ' over') + ').', 'system');
+      const isToday = logDate === (stats && stats.todayStr);
+      const dayTotal = (isToday ? (stats && stats.today.calories) : ((stats && stats.dailyMap[logDate]) || {}).calories) || 0;
+      const remaining = budget - dayTotal;
+      addCalorieMessage(CALORIE_COPY.logged(calVal, dayTotal, budget, remaining, isToday ? null : formatLogDateLabel(logDate)), 'system');
+      renderCalorieChatStatus();
+      renderFoodLog();
       resetCalorieChat();
     });
     actions.appendChild(cancelBtn);
@@ -1943,17 +2136,59 @@ document.addEventListener('DOMContentLoaded', async () => {
     setCalorieComposerEnabled(false, 'Confirm the entry above first');
   }
 
+  function startClarifyingFlow(trimmed) {
+    calorieChat.originalText = trimmed;
+    calorieChat.questions = CalorieTracker.getClarifyingQuestions(trimmed);
+    calorieChat.questionIndex = 0;
+    calorieChat.answers = {};
+    calorieChat.stage = 'asking';
+    askNextCalorieQuestion();
+  }
+
+  // Rigid canned questions ("what kind of bread", or worse, the generic
+  // "...and the exact kind or brand?" for anything unrecognized) don't
+  // actually know what's reasonable for a given food the way a model does --
+  // and answering the generic one by just repeating the food name used to
+  // literally duplicate it in the query (e.g. "crab" -> "crab crab"). So
+  // when Gemini is configured, it's the one deciding/estimating for EVERY
+  // entry, known-rule or not, instead of interrogating the user. The
+  // keyword clarifying-question flow only kicks in as what's left for
+  // people who haven't set up an AI key, or on an AI-side error -- and even
+  // then, unrecognized food skips straight to a manual-entry prompt instead
+  // of the old generic "brand" question.
+  async function startFoodEntry(trimmed) {
+    calorieChat.originalText = trimmed;
+    calorieChat.stage = 'working';
+    const credentials = await CalorieTracker.CalorieKeys.getCredentials();
+    if (credentials.geminiApiKey) {
+      setCalorieComposerEnabled(false, 'Checking...');
+      addCalorieMessage(pickVariant(CALORIE_COPY.checking), 'system');
+      let result;
+      try {
+        result = await CalorieTracker.estimateCaloriesWithAI({ text: trimmed, credentials });
+      } catch (err) {
+        result = { isFood: null, calories: null, source: 'manual', reason: 'ai-error' };
+      }
+      if (result.isFood !== null) {
+        showCalorieConfirm(trimmed, result);
+        return;
+      }
+      // AI configured but unavailable/errored this time -- fall through to
+      // the no-key behavior below rather than leaving the user stuck.
+    }
+    if (CalorieTracker.hasKnownFoodRule(trimmed)) {
+      startClarifyingFlow(trimmed);
+    } else {
+      showCalorieConfirm(trimmed, { calories: null, source: 'manual', reason: 'no-match' });
+    }
+  }
+
   function handleCalorieSubmit(text) {
     const trimmed = text.trim();
     if (!trimmed || calorieChat.stage === 'working' || calorieChat.stage === 'confirming') return;
     if (calorieChat.stage === 'idle') {
       addCalorieMessage(trimmed, 'user');
-      calorieChat.originalText = trimmed;
-      calorieChat.questions = CalorieTracker.getClarifyingQuestions(trimmed);
-      calorieChat.questionIndex = 0;
-      calorieChat.answers = {};
-      calorieChat.stage = 'asking';
-      askNextCalorieQuestion();
+      startFoodEntry(trimmed);
       return;
     }
     addCalorieMessage(trimmed, 'user');
@@ -1963,6 +2198,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     askNextCalorieQuestion();
   }
 
+  // Reports the budget/total for whichever date is selected in the "Logging
+  // for" picker (today by default), not always today -- otherwise the status
+  // pill would keep showing today's numbers while you're backdating entries
+  // into a previous day, which would be actively misleading.
   function renderCalorieChatStatus() {
     const status = el('calorie-chat-status');
     if (!status) return;
@@ -1973,10 +2212,94 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     const budget = goalFor(m);
-    const today = (stats.today && stats.today.calories) || 0;
-    status.textContent = today + ' / ' + budget + ' kcal today';
-    status.classList.toggle('over-budget', today > budget);
-    status.classList.toggle('under-budget', today <= budget);
+    const isToday = calorieChat.logDate === stats.todayStr;
+    const total = (isToday ? stats.today.calories : (stats.dailyMap[calorieChat.logDate] || {}).calories) || 0;
+    status.textContent = total + ' / ' + budget + ' kcal' + (isToday ? ' today' : ' on ' + formatLogDateLabel(calorieChat.logDate));
+    status.classList.toggle('over-budget', total > budget);
+    status.classList.toggle('under-budget', total <= budget);
+  }
+
+  // Itemized record of what was actually eaten on the selected date. The
+  // chat above is just the conversation used to arrive at a number; this is
+  // the persistent log (backed by the same TrackerStorage logs every other
+  // tracker uses) so past entries -- today's or a backdated day's -- can be
+  // reviewed or removed individually.
+  async function renderFoodLog() {
+    const list = el('calorie-food-log-list');
+    const totalEl = el('calorie-food-log-total');
+    const titleEl = el('calorie-food-log-title');
+    if (!list) return;
+    const logDate = calorieChat.logDate || TrackerStorage.getLocalDateStr();
+    const isToday = logDate === TrackerStorage.getLocalDateStr();
+    if (titleEl) titleEl.textContent = isToday ? "Today's Log" : 'Log for ' + formatLogDateLabel(logDate);
+    let logs;
+    try {
+      logs = await TrackerStorage.getLogs({ metricId: 'calories', startDate: logDate, endDate: logDate });
+    } catch (err) {
+      logs = [];
+    }
+    list.innerHTML = '';
+    if (logs.length === 0) {
+      const empty = document.createElement('li');
+      empty.className = 'calorie-food-log-empty';
+      empty.textContent = isToday ? 'Nothing logged yet today.' : 'Nothing logged for this day.';
+      list.appendChild(empty);
+      if (totalEl) totalEl.textContent = '';
+      return;
+    }
+    let total = 0;
+    // getLogs returns newest first; show the day in the order it happened.
+    logs.slice().reverse().forEach(log => {
+      const count = log.count || 0;
+      total += count;
+      const item = document.createElement('li');
+      item.className = 'calorie-food-log-item';
+
+      const text = document.createElement('span');
+      text.className = 'calorie-food-log-item-text';
+      text.textContent = log.notes || 'Entry';
+      text.title = log.notes || 'Entry';
+
+      const cal = document.createElement('span');
+      cal.className = 'calorie-food-log-item-cal';
+      cal.textContent = count + ' kcal';
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'calorie-food-log-item-del';
+      delBtn.setAttribute('aria-label', 'Remove ' + (log.notes || 'this entry'));
+      delBtn.innerHTML = '<svg viewBox="0 0 12 12" width="10" height="10" fill="none" aria-hidden="true" focusable="false"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+      delBtn.addEventListener('click', async () => {
+        delBtn.disabled = true;
+        try {
+          await TrackerStorage.deleteLog(log.id);
+        } catch (err) {
+          delBtn.disabled = false;
+          return;
+        }
+        notifyCalendarTabs();
+        await loadData();
+        renderCalorieChatStatus();
+        renderFoodLog();
+      });
+
+      item.appendChild(text);
+      item.appendChild(cal);
+      item.appendChild(delBtn);
+      list.appendChild(item);
+    });
+    if (totalEl) totalEl.textContent = total + ' kcal total';
+  }
+
+  function setCalorieLogDate(dateStr) {
+    const today = TrackerStorage.getLocalDateStr();
+    calorieChat.logDate = dateStr && dateStr <= today ? dateStr : today;
+    const dateInput = el('calorie-log-date');
+    const todayBtn = el('calorie-log-date-today-btn');
+    if (dateInput) dateInput.value = calorieChat.logDate;
+    if (todayBtn) todayBtn.classList.toggle('hidden', calorieChat.logDate === today);
+    renderCalorieChatStatus();
+    renderFoodLog();
   }
 
   function initCalorieChatOnce() {
@@ -1985,6 +2308,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     const form = el('calorie-chat-form');
     const input = el('calorie-chat-input');
     if (!form || !input) return;
+
+    const dateInput = el('calorie-log-date');
+    const todayBtn = el('calorie-log-date-today-btn');
+    const today = TrackerStorage.getLocalDateStr();
+    if (dateInput) {
+      dateInput.max = today;
+      dateInput.value = today;
+      calorieChat.logDate = today;
+      dateInput.addEventListener('change', () => setCalorieLogDate(dateInput.value));
+    } else {
+      calorieChat.logDate = today;
+    }
+    if (todayBtn) todayBtn.addEventListener('click', () => setCalorieLogDate(today));
+
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const text = input.value;
@@ -2009,6 +2346,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       el('calorie-key-nix-id').value = creds.nutritionixAppId || '';
       el('calorie-key-nix-key').value = creds.nutritionixApiKey || '';
       el('calorie-key-usda').value = creds.usdaApiKey || '';
+      el('calorie-key-gemini').value = creds.geminiApiKey || '';
       openModal(el('calorie-keys-modal'), 'calorie-key-nix-id');
     });
   }
@@ -2018,7 +2356,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     await CalorieTracker.CalorieKeys.saveCredentials({
       nutritionixAppId: el('calorie-key-nix-id').value,
       nutritionixApiKey: el('calorie-key-nix-key').value,
-      usdaApiKey: el('calorie-key-usda').value
+      usdaApiKey: el('calorie-key-usda').value,
+      geminiApiKey: el('calorie-key-gemini').value
     });
     closeModal(el('calorie-keys-modal'));
     showStatus('Nutrition API keys saved.', 'ok');

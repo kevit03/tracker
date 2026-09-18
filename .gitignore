@@ -14,3 +14,8 @@ Thumbs.db
 
 # Claude Code local launch config
 .claude/
+
+# Local secrets / API keys - never commit these
+.env
+.env.*
+!.env.example

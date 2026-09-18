@@ -55,7 +55,16 @@ async function run() {
     assert.strictEqual(CT.isSkip('no'), true);
     assert.strictEqual(CT.isSkip('  Nothing.  '), true);
     assert.strictEqual(CT.isSkip('butter'), false);
-    console.log('[PASS] Query assembly folds clarifying answers into one sentence, skips "no" sides');
+
+    // Regression: the old generic "details" answer used to be appended
+    // AFTER the lead already fell back to originalText, so re-stating the
+    // same word (e.g. answering "crab" to "what's the exact kind?" for
+    // original text "crab") produced a duplicated "crab crab" query.
+    const q3 = CT.buildFollowupQuery('crab', { details: 'crab', sides: 'no' });
+    assert.strictEqual(q3, 'crab', 'a details answer that repeats the original text must not be duplicated');
+    const q4 = CT.buildFollowupQuery('mystery food', { details: '2 legs of snow crab', sides: 'no' });
+    assert.strictEqual(q4, '2 legs of snow crab', 'a more specific details answer replaces the vague original text');
+    console.log('[PASS] Query assembly folds clarifying answers into one sentence, skips "no" sides, never duplicates "details"');
   }
 
   // 3. Nutritionix success path: sums nf_calories, builds a breakdown.
@@ -108,6 +117,36 @@ async function run() {
     console.log('[PASS] Nutritionix failure falls back to USDA with a gram-scaled estimate');
   }
 
+  // 4b. Food-aware cup weights: verified against real-world reference values
+  //     (gathered via web search against USDA/nutrition-database figures).
+  //     A cup is NOT one universal weight -- treating every "cup" as a
+  //     liquid's ~240g overestimated a cup of cooked rice by ~53% and cooked
+  //     pasta by ~72% versus real-world calorie counts for those exact foods.
+  {
+    const CT = freshCalorieTracker();
+    assert.strictEqual(CT.cupGramsFor('cup cooked white rice'), 158, 'rice is ~158g/cup cooked, not a liquid\'s 240g');
+    assert.strictEqual(CT.cupGramsFor('cup spaghetti'), 140, 'cooked pasta is ~140g/cup');
+    assert.strictEqual(CT.cupGramsFor('cup whole milk'), 240, 'milk/liquids keep the ~240g/cup default');
+
+    // Real reference: 1 cup cooked white rice = ~204 kcal (USDA density ~130
+    // kcal/100g). The old flat 240g/cup estimate would have given 312 kcal --
+    // a ~53% overestimate -- for the exact same USDA density value.
+    assert.strictEqual(Math.round(130 * CT.estimateGrams('cup cooked white rice') / 100), 205);
+
+    // Real reference: 1 cup cooked spaghetti = ~220 kcal (density ~158
+    // kcal/100g). The old flat 240g/cup estimate would have given 379 kcal.
+    assert.strictEqual(Math.round(158 * CT.estimateGrams('cup spaghetti') / 100), 221);
+
+    const rice = await CT.estimateCalories({
+      query: '1 cup cooked white rice',
+      credentials: { usdaApiKey: 'usda-key' },
+      fetchImpl: () => jsonResponse({ foods: [{ description: 'Rice, white, cooked', foodNutrients: [{ nutrientId: 1008, value: 130 }] }] })
+    });
+    assert.strictEqual(rice.source, 'usda');
+    assert.ok(Math.abs(rice.calories - 204) <= 10, 'USDA-tier rice estimate (' + rice.calories + ') should land near the real ~204 kcal, not ~312');
+    console.log('[PASS] Cup weights are food-aware and match real-world rice/pasta calorie counts, not a flat liquid weight');
+  }
+
   // 5. Neither provider configured -> manual entry requested, no fetch call made.
   {
     const CT = freshCalorieTracker();
@@ -118,6 +157,168 @@ async function run() {
     assert.strictEqual(result.source, 'manual');
     assert.strictEqual(called, false, 'no network call without any configured key');
     console.log('[PASS] No configured provider falls back to manual entry without calling fetch');
+  }
+
+  // 5b. AI (Gemini) classify/estimate path: food -> calories, non-food -> null
+  //     with a reason, no key -> "unavailable" without calling fetch.
+  {
+    const CT = freshCalorieTracker();
+    assert.strictEqual(CT.hasKnownFoodRule('slice of bread'), true);
+    assert.strictEqual(CT.hasKnownFoodRule('a bowl of glorp'), false);
+
+    const foodResult = await CT.estimateCaloriesWithAI({
+      text: 'a bowl of glorp',
+      credentials: { geminiApiKey: 'key' },
+      fetchImpl: () => jsonResponse({
+        candidates: [{ content: { parts: [{ text: '{"isFood": true, "calories": 310, "summary": "assumed a typical bowl"}' }] } }]
+      })
+    });
+    assert.strictEqual(foodResult.isFood, true);
+    assert.strictEqual(foodResult.calories, 310);
+    assert.strictEqual(foodResult.source, 'ai');
+
+    const notFoodResult = await CT.estimateCaloriesWithAI({
+      text: 'my homework',
+      credentials: { geminiApiKey: 'key' },
+      fetchImpl: () => jsonResponse({
+        candidates: [{ content: { parts: [{ text: '{"isFood": false, "calories": null, "summary": "not edible"}' }] } }]
+      })
+    });
+    assert.strictEqual(notFoodResult.isFood, false);
+    assert.strictEqual(notFoodResult.calories, null);
+    assert.strictEqual(notFoodResult.reason, 'not-food');
+
+    let called = false;
+    const noKeyResult = await CT.estimateCaloriesWithAI({
+      text: 'anything',
+      credentials: {},
+      fetchImpl: () => { called = true; return jsonResponse({}); }
+    });
+    assert.strictEqual(noKeyResult.isFood, null);
+    assert.strictEqual(called, false, 'no network call without a configured Gemini key');
+    console.log('[PASS] AI classify/estimate: known-food detection, food vs. non-food, no-key short circuit');
+  }
+
+  // 5c. Leading quantity is parsed off, priced per unit, then multiplied
+  //     locally -- e.g. "3 whole grain" -> 3 x (per-unit calories from Gemini).
+  {
+    const CT = freshCalorieTracker();
+    assert.deepStrictEqual(CT.extractLeadingQuantity('3 whole grain'), { qty: 3, rest: 'whole grain' });
+    assert.deepStrictEqual(CT.extractLeadingQuantity('whole grain'), { qty: 1, rest: 'whole grain' });
+    assert.deepStrictEqual(CT.extractLeadingQuantity('2.5 cups oats'), { qty: 2.5, rest: 'cups oats' });
+
+    let sentPrompt = '';
+    const result = await CT.estimateCaloriesWithAI({
+      text: '3 whole grain',
+      credentials: { geminiApiKey: 'key' },
+      fetchImpl: (url, opts) => {
+        sentPrompt = JSON.parse(opts.body).contents[0].parts[0].text;
+        return jsonResponse({
+          candidates: [{ content: { parts: [{ text: '{"isFood": true, "calories": 80, "summary": "1 slice whole grain bread"}' }] } }]
+        });
+      }
+    });
+    assert.strictEqual(result.calories, 240, 'per-unit calories (80) x quantity (3)');
+    assert.ok(sentPrompt.includes('whole grain') && !sentPrompt.includes('"3 whole grain"'), 'quantity is stripped before asking the AI to price one unit');
+    console.log('[PASS] Leading quantity ("3 whole grain") is priced per unit and multiplied locally');
+  }
+
+  // 5d. estimateCalories falls back to AI-with-search once Nutritionix and
+  //     USDA both fail to match, instead of giving up at "manual".
+  {
+    const CT = freshCalorieTracker();
+    let usdaCalled = false;
+    let geminiCalled = false;
+    const fetchImpl = (url) => {
+      if (String(url).includes('usda')) { usdaCalled = true; return jsonResponse({ foods: [] }); }
+      geminiCalled = true;
+      return jsonResponse({
+        candidates: [{ content: { parts: [{ text: '{"calories": 420, "summary": "found via web search"}' }] } }]
+      });
+    };
+    const result = await CT.estimateCalories({
+      query: 'some obscure regional dish',
+      credentials: { usdaApiKey: 'usda-key', geminiApiKey: 'gemini-key' },
+      fetchImpl
+    });
+    assert.strictEqual(usdaCalled, true);
+    assert.strictEqual(geminiCalled, true);
+    assert.strictEqual(result.source, 'ai-search');
+    assert.strictEqual(result.calories, 420);
+    assert.strictEqual(result.approximate, true);
+    console.log('[PASS] estimateCalories falls back to Gemini web search after Nutritionix/USDA both miss');
+  }
+
+  // 5e. Cross-checking: every configured source is queried (so they can all
+  //     fact-check each other), but when two of them roughly agree, their
+  //     average wins even if a third (here, the AI lookup) is an outlier.
+  {
+    const CT = freshCalorieTracker();
+    let geminiCalled = false;
+    const fetchImpl = (url) => {
+      if (String(url).includes('nutritionix')) return jsonResponse({ foods: [{ food_name: 'chicken breast', nf_calories: 150 }] });
+      if (String(url).includes('usda')) return jsonResponse({ foods: [{ description: 'Chicken, breast', foodNutrients: [{ nutrientId: 1008, value: 145 }] }] });
+      geminiCalled = true;
+      return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"calories": 999, "summary": "should not be used"}' }] } }] });
+    };
+    const result = await CT.estimateCalories({
+      query: 'chicken breast',
+      credentials: { nutritionixAppId: 'id', nutritionixApiKey: 'key', usdaApiKey: 'usda-key', geminiApiKey: 'gemini-key' },
+      fetchImpl
+    });
+    assert.strictEqual(geminiCalled, true, 'all configured sources are queried so they can be fact-checked against each other');
+    assert.strictEqual(result.source, 'cross-checked');
+    assert.strictEqual(result.calories, 148, 'averages the two agreeing candidates (150 and 145), ignoring the 999 outlier');
+    console.log('[PASS] Agreeing sources are cross-checked and averaged, ignoring a disagreeing outlier');
+  }
+
+  // 5f. Cross-checking catches a bad match (the reported bug: USDA matching
+  //     "egg" to "Egg white, raw" at ~52 kcal/100g instead of a whole egg,
+  //     which is ~26 kcal for a 50g "egg" gram-estimate vs. Nutritionix's
+  //     correct ~78). With none of the three configured sources agreeing,
+  //     Gemini arbitrates using the raw numbers and corrects it.
+  {
+    const CT = freshCalorieTracker();
+    const fetchImpl = (url, opts) => {
+      if (String(url).includes('nutritionix')) return jsonResponse({ foods: [{ food_name: 'egg', nf_calories: 78 }] });
+      if (String(url).includes('usda')) return jsonResponse({ foods: [{ description: 'Egg white, raw', foodNutrients: [{ nutrientId: 1008, value: 52 }] }] });
+      // Gemini is hit twice here: once as a third candidate lookup, once to
+      // arbitrate. Distinguish them by the arbitration prompt's own wording.
+      const prompt = JSON.parse(opts.body).contents[0].parts[0].text;
+      if (prompt.includes('disagreed with each other')) {
+        return jsonResponse({
+          candidates: [{ content: { parts: [{ text: '{"calories": 78, "summary": "trusted Nutritionix; USDA matched egg white, not a whole egg"}' }] } }]
+        });
+      }
+      return jsonResponse({ candidates: [{ content: { parts: [{ text: '{"calories": 200, "summary": "rough AI guess"}' }] } }] });
+    };
+    const result = await CT.estimateCalories({
+      query: 'egg',
+      credentials: { nutritionixAppId: 'id', nutritionixApiKey: 'key', usdaApiKey: 'usda-key', geminiApiKey: 'gemini-key' },
+      fetchImpl
+    });
+    assert.strictEqual(result.source, 'ai-arbitrated');
+    assert.strictEqual(result.calories, 78, 'Gemini arbitration corrects the bad USDA egg-white match');
+    assert.ok(Array.isArray(result.checkedAgainst) && result.checkedAgainst.length === 3, 'all three candidates (78, 26, 200) are recorded even though none agreed');
+    console.log('[PASS] Three disagreeing sources (egg vs. egg white vs. a rough AI guess) are sent to Gemini for arbitration, which corrects it');
+  }
+
+  // 5g. Same disagreement, but no Gemini key configured: falls back to the
+  //     more reliable source (Nutritionix) by priority instead of an AI tiebreak.
+  {
+    const CT = freshCalorieTracker();
+    const fetchImpl = (url) => {
+      if (String(url).includes('nutritionix')) return jsonResponse({ foods: [{ food_name: 'egg', nf_calories: 78 }] });
+      return jsonResponse({ foods: [{ description: 'Egg white, raw', foodNutrients: [{ nutrientId: 1008, value: 52 }] }] });
+    };
+    const result = await CT.estimateCalories({
+      query: 'egg',
+      credentials: { nutritionixAppId: 'id', nutritionixApiKey: 'key', usdaApiKey: 'usda-key' },
+      fetchImpl
+    });
+    assert.strictEqual(result.source, 'nutritionix', 'without AI to arbitrate, Nutritionix is trusted over a coarse USDA keyword match');
+    assert.strictEqual(result.calories, 78);
+    console.log('[PASS] Without a Gemini key, disagreement falls back to the higher-priority source');
   }
 
   // 6. TDEE / budget estimate: known reference values (Mifflin-St Jeor).
@@ -198,6 +399,31 @@ async function run() {
     assert.strictEqual(deleted, false, 'the calorie tracker cannot be deleted like other built-ins');
     uninstallMockChrome();
     console.log('[PASS] ensureCalorieMetric is idempotent and creates an undeletable built-in tracker');
+  }
+
+  // 9. Backdated calorie logging: addLog's existing `date` override (already
+  //    used by other trackers) works the same way for 'calories', and
+  //    getStats().dailyMap -- what the calorie chat's date picker reads --
+  //    reflects it on the right day, leaving today's total untouched.
+  {
+    installMockChrome();
+    const TrackerStorage = freshStorage();
+    await TrackerStorage.ensureCalorieMetric();
+    const today = TrackerStorage.getLocalDateStr();
+    const yesterday = TrackerStorage.addDays(today, -1);
+
+    await TrackerStorage.addLog({ metricId: 'calories', count: 450, notes: 'leftover pizza', date: yesterday });
+    await TrackerStorage.addLog({ metricId: 'calories', count: 300, notes: 'oatmeal', date: today });
+
+    const stats = await TrackerStorage.getStats();
+    assert.strictEqual(stats.today.calories, 300, "today's total only includes today's entry");
+    assert.strictEqual(stats.dailyMap[yesterday].calories, 450, "yesterday's backdated entry lands on yesterday, not today");
+
+    const yesterdaysLogs = await TrackerStorage.getLogs({ metricId: 'calories', startDate: yesterday, endDate: yesterday });
+    assert.strictEqual(yesterdaysLogs.length, 1);
+    assert.strictEqual(yesterdaysLogs[0].notes, 'leftover pizza');
+    uninstallMockChrome();
+    console.log('[PASS] Calorie entries can be backdated via addLog\'s date param, and dailyMap/getLogs reflect the right day');
   }
 
   console.log('--- test/calorie.test.js COMPLETED SUCCESSFULLY ---\n');
